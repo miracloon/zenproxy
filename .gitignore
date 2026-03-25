@@ -6,15 +6,6 @@
 
 # Binaries
 *.exe
-/deploy/zenproxy
-/deploy/zenproxy.zip
-
-# Deploy secrets
-/deploy/config.toml
-
-# sing-box source (separate repo)
-/sing-box-dev-next/sing-box
-/sing-box-dev-next/sing-box.exe
 
 # sing-box-zenproxy build artifacts
 /sing-box-zenproxy/sing-box-linux-*
@@ -22,6 +13,7 @@
 
 # IDE / OS
 .claude/
+.gemini/
 .vscode/
 .idea/
 *.swp
@@ -29,6 +21,7 @@
 Thumbs.db
 .DS_Store
 
-# Local test files
+# Local files (not tracked)
+DOCS_CONTROL_BUILD.md
 sc0.yaml
 compile.txt
