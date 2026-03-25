@@ -1,0 +1,13 @@
+.git
+.github
+.agents
+.agent
+docs
+tests
+target
+*.md
+!README.md
+LICENSE
+skills-lock.json
+CLAUDE.md
+AGENTS.md

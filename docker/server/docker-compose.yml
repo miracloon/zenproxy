@@ -1,0 +1,17 @@
+services:
+  zenproxy-server:
+    build:
+      context: ../../
+      dockerfile: docker/server/Dockerfile
+    image: ${DOCKERHUB_USERNAME:-zenproxy}/zenproxy-server:${IMAGE_TAG:-latest}
+    container_name: zenproxy-server
+    restart: unless-stopped
+    volumes:
+      - ./config/config.toml:/app/config.toml:ro
+      - ./data:/app/data
+    ports:
+      - "${SERVER_PORT:-3000}:3000"
+      - "${SINGBOX_API_PORT:-9090}:9090"
+      - "${PROXY_PORT_START:-10002}-${PROXY_PORT_END:-10301}:${PROXY_PORT_START:-10002}-${PROXY_PORT_END:-10301}"
+    environment:
+      - RUST_LOG=${RUST_LOG:-zenproxy=info,tower_http=info}
