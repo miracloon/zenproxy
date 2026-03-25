@@ -57,14 +57,14 @@ zenproxy/
 │   │   ├── Dockerfile
 │   │   ├── docker-compose.yml
 │   │   ├── .env
-│   │   ├── config/               # 服务端配置模板
-│   │   └── data/                 # 持久化数据目录（.gitkeep）
+│   │   ├── config/config.toml    # 服务端配置模板
+│   │   └── data/                 # 持久化数据目录
 │   └── client/                   # 客户端镜像
 │       ├── Dockerfile
 │       ├── docker-compose.yml
 │       ├── .env
-│       ├── config/               # 客户端配置模板
-│       └── data/                 # 持久化数据目录（.gitkeep）
+│       ├── config/config.json    # 客户端配置模板
+│       └── data/                 # 持久化数据目录
 ├── tests/                        # 测试脚本（Python）
 ├── docs/                         # 控制文档
 │   ├── INTENT.md                 # 项目意图
@@ -77,6 +77,7 @@ zenproxy/
 │       └── <version>/            # 版本级开发文档
 ├── .github/workflows/            # GitHub Actions CI/CD
 ├── Cargo.toml / Cargo.lock       # Rust 项目配置
+├── .dockerignore                 # Docker 构建上下文排除
 ├── AGENTS.md                     # AI 入口文档
 ├── CLAUDE.md                     # Claude 专属补丁
 └── README.md                     # 用户操作手册
