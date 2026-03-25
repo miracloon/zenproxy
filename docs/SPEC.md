@@ -65,8 +65,7 @@ zenproxy/
 │       ├── .env
 │       ├── config/               # 客户端配置模板
 │       └── data/                 # 持久化数据目录（.gitkeep）
-├── tests/                        # API 冒烟测试脚本（Python）
-├── examples/                     # 使用示例脚本
+├── tests/                        # 测试脚本（Python）
 ├── docs/                         # 控制文档
 │   ├── INTENT.md                 # 项目意图
 │   ├── WORKFLOW.md               # 运转拓扑
@@ -83,10 +82,6 @@ zenproxy/
 └── README.md                     # 用户操作手册
 ```
 
-**已移除的目录/文件**（相对于上游）：
-- `sing-box-dev-next/`：原版 sing-box 参照目录，已移除。上游基准为 sing-box 1.13.0 (dev-next 分支)。
-- `deploy/`：裸机部署脚本，已被 `docker/` 替代。
-- `example.zip`：已删除。
 
 ---
 
