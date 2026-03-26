@@ -1,0 +1,15 @@
+services:
+  zenproxy-client:
+    image: crushry/zenproxy-client:latest
+    platform: linux/amd64
+    container_name: zenproxy-client
+    restart: unless-stopped
+    volumes:
+      - ./config/config.json:/app/config.json:ro
+      - ./data:/app/data
+    environment:
+      - PROXY_PORT_START=${PROXY_PORT_START:-60001}
+      - PROXY_PORT_END=${PROXY_PORT_END:-65535}
+    ports:
+      - "${CLASH_API_PORT:-9091}:9090"  # We use 9091 here by default if not set to avoid conflict with server's 9090 in local test
+      - "${PROXY_PORT_START:-60001}-${PROXY_PORT_END:-60010}:${PROXY_PORT_START:-60001}-${PROXY_PORT_END:-60010}"

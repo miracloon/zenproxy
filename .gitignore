@@ -25,3 +25,10 @@ Thumbs.db
 DOCS_CONTROL_BUILD.md
 sc0.yaml
 compile.txt
+
+# Runtime data
+docker/server/data/*.db
+docker/server/data/*.db-shm
+docker/server/data/*.db-wal
+docker/server/data/singbox-config.json
+docker/client/data/
