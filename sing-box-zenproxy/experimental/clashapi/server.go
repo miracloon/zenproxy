@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -34,6 +35,18 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 )
+
+func getEnvUint16(key string, defaultVal uint16) uint16 {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultVal
+	}
+	parsed, err := strconv.ParseUint(val, 10, 16)
+	if err != nil {
+		return defaultVal
+	}
+	return uint16(parsed)
+}
 
 func init() {
 	experimental.RegisterClashServerConstructor(NewServer)
@@ -93,7 +106,9 @@ func NewServer(ctx context.Context, logFactory log.ObservableFactory, options op
 	// Initialize ProxyStore and PortPool
 	dataDir := filepath.Join(filemanager.BasePath(ctx, ""), "data")
 	proxyStore := NewProxyStore(dataDir, logFactory.NewLogger("proxy-store"))
-	portPool := newPortPool(20001, 10000, logFactory.NewLogger("port-pool"))
+	portStart := getEnvUint16("PROXY_PORT_START", 60001)
+	portEnd := getEnvUint16("PROXY_PORT_END", 65535)
+	portPool := newPortPool(portStart, portEnd-portStart+1, logFactory.NewLogger("port-pool"))
 	s.bindingManager = newBindingManager(s, logFactory, proxyStore, portPool)
 	defaultMode := "Rule"
 	if options.DefaultMode != "" {

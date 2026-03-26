@@ -98,7 +98,7 @@ impl Default for SubscriptionConfig {
 impl AppConfig {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string("config.toml")
-            .unwrap_or_else(|_| include_str!("../config.toml").to_string());
+            .map_err(|e| format!("Failed to read config.toml: {e}"))?;
         let config: AppConfig = toml::from_str(&content)?;
         Ok(config)
     }

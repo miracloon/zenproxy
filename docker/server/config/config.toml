@@ -1,0 +1,35 @@
+[server]
+host = "0.0.0.0"
+port = 3000
+admin_password = "change-me"
+min_trust_level = 1
+
+[oauth]
+client_id = ""
+client_secret = ""
+redirect_uri = "https://your-domain.com/api/auth/callback"
+
+[singbox]
+binary_path = "/app/sing-box"
+config_path = "data/singbox-config.json"
+base_port = 10001
+max_proxies = 300
+api_port = 9090
+api_secret = ""
+
+[database]
+path = "data/zenproxy.db"
+
+[validation]
+url = "https://www.bing.com"
+timeout_secs = 10
+concurrency = 50
+interval_mins = 30
+error_threshold = 10
+
+[quality]
+interval_mins = 120
+concurrency = 10
+
+[subscription]
+auto_refresh_interval_mins = 0
