@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 
 pub struct AppState {
     pub config: AppConfig,
+    pub config_path: String,
     pub db: Database,
     pub pool: ProxyPool,
     pub singbox: Arc<Mutex<SingboxManager>>,
@@ -45,6 +46,11 @@ async fn main() {
 
     // Initialize database
     let db = Database::new(&config.database.path).expect("Failed to initialize database");
+
+    // Seed runtime settings from config.toml to DB
+    if let Err(e) = crate::config::seed_settings_to_db(&db, &config) {
+        tracing::error!("Failed to seed settings: {e}");
+    }
 
     // Initialize proxy pool from database
     let pool = ProxyPool::new();
@@ -88,6 +94,7 @@ async fn main() {
 
     let state = Arc::new(AppState {
         config: config.clone(),
+        config_path: "config.toml".to_string(),
         db,
         pool,
         singbox,
@@ -121,9 +128,11 @@ async fn start_background_tasks(state: Arc<AppState>) {
     let state_clone = state.clone();
     // Periodic validation
     tokio::spawn(async move {
-        let interval = std::time::Duration::from_secs(state_clone.config.validation.interval_mins * 60);
         loop {
-            tokio::time::sleep(interval).await;
+            let interval_mins: u64 = state_clone.db.get_setting("validation_interval_mins")
+                .ok().flatten().and_then(|v| v.parse().ok())
+                .unwrap_or(state_clone.config.validation.interval_mins);
+            tokio::time::sleep(std::time::Duration::from_secs(interval_mins * 60)).await;
             tracing::info!("Running periodic proxy validation...");
             if let Err(e) = pool::validator::validate_all(state_clone.clone()).await {
                 tracing::error!("Validation error: {e}");
@@ -180,14 +189,19 @@ async fn start_background_tasks(state: Arc<AppState>) {
     });
 
     // Periodic subscription auto-refresh
-    if state.config.subscription.auto_refresh_interval_mins > 0 {
+    {
         let state_clone = state.clone();
         tokio::spawn(async move {
-            let interval = std::time::Duration::from_secs(
-                state_clone.config.subscription.auto_refresh_interval_mins * 60,
-            );
             loop {
-                tokio::time::sleep(interval).await;
+                let interval_mins: u64 = state_clone.db.get_setting("subscription_auto_refresh_interval_mins")
+                    .ok().flatten().and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
+                if interval_mins == 0 {
+                    // Disabled; check again in 5 minutes
+                    tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+                    continue;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(interval_mins * 60)).await;
                 refresh_all_subscriptions(&state_clone).await;
             }
         });

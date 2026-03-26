@@ -116,7 +116,10 @@ async fn check_batch(
     state: &Arc<AppState>,
     rate_limiter: &Arc<RateLimiter>,
 ) -> usize {
-    let semaphore = Arc::new(Semaphore::new(state.config.quality.concurrency));
+    let quality_concurrency = state.db.get_setting("quality_concurrency")
+        .ok().flatten().and_then(|v| v.parse().ok())
+        .unwrap_or(state.config.quality.concurrency);
+    let semaphore = Arc::new(Semaphore::new(quality_concurrency));
     let mut handles = Vec::new();
 
     for proxy in proxies.iter().cloned() {

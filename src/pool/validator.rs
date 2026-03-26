@@ -30,10 +30,17 @@ pub async fn validate_all(state: Arc<AppState>) -> Result<(), String> {
         }
     }
 
-    let concurrency = state.config.validation.concurrency;
-    let timeout_duration = std::time::Duration::from_secs(state.config.validation.timeout_secs);
-    let validation_url = state.config.validation.url.clone();
-    let max_proxies = state.config.singbox.max_proxies;
+    let concurrency = state.db.get_setting("validation_concurrency")
+        .ok().flatten().and_then(|v| v.parse().ok())
+        .unwrap_or(state.config.validation.concurrency);
+    let timeout_secs = state.db.get_setting("validation_timeout_secs")
+        .ok().flatten().and_then(|v| v.parse().ok())
+        .unwrap_or(state.config.validation.timeout_secs);
+    let timeout_duration = std::time::Duration::from_secs(timeout_secs);
+    let validation_url = state.db.get_setting("validation_url")
+        .ok().flatten()
+        .unwrap_or_else(|| state.config.validation.url.clone());
+    let max_proxies = state.config.singbox.max_proxies; // boot config
 
     let mut round = 0u32;
     let mut total_validated = 0usize;
@@ -106,7 +113,9 @@ pub async fn validate_all(state: Arc<AppState>) -> Result<(), String> {
     }
 
     // Cleanup high-error proxies (once, after all rounds)
-    let threshold = state.config.validation.error_threshold;
+    let threshold = state.db.get_setting("validation_error_threshold")
+        .ok().flatten().and_then(|v| v.parse().ok())
+        .unwrap_or(state.config.validation.error_threshold);
     match state.db.cleanup_high_error_proxies(threshold) {
         Ok(count) if count > 0 => {
             tracing::info!("Cleaned up {count} proxies exceeding error threshold");
