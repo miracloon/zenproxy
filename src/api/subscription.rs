@@ -338,8 +338,10 @@ pub async fn sync_proxy_bindings(state: &Arc<AppState>, mode: SyncMode) {
         return;
     }
 
-    let max = state.config.singbox.max_proxies;
-    let batch = state.config.validation.batch_size;
+    let max = state.config.singbox.max_proxies; // boot config, not runtime-editable
+    let batch = state.db.get_setting("validation_batch_size")
+        .ok().flatten().and_then(|v| v.parse().ok())
+        .unwrap_or(state.config.validation.batch_size);
 
     // Snapshot ALL current ports before changes (for sync_bindings diff)
     let all_current_ports: Vec<(String, u16)> = all_proxies

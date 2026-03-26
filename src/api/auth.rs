@@ -2,6 +2,8 @@ use crate::db::User;
 use crate::error::AppError;
 use crate::AppState;
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use argon2::password_hash::{SaltString, rand_core::OsRng};
+use argon2::PasswordHasher;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Redirect, Response};
@@ -37,8 +39,21 @@ struct LinuxDoUser {
 }
 
 pub async fn login(State(state): State<Arc<AppState>>) -> Response {
-    let client_id = &state.config.oauth.client_id;
-    let redirect_uri = &state.config.oauth.redirect_uri;
+    // Check if OAuth is enabled
+    let enabled = state.db.get_setting("enable_oauth")
+        .ok().flatten()
+        .map(|v| v == "true")
+        .unwrap_or(true);
+    if !enabled {
+        return (axum::http::StatusCode::FORBIDDEN, "OAuth login is disabled").into_response();
+    }
+
+    let client_id = state.db.get_setting("oauth_client_id")
+        .ok().flatten()
+        .unwrap_or_else(|| state.config.oauth.client_id.clone());
+    let redirect_uri = state.db.get_setting("oauth_redirect_uri")
+        .ok().flatten()
+        .unwrap_or_else(|| state.config.oauth.redirect_uri.clone());
     let url = format!(
         "{AUTHORIZE_URL}?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code"
     );
@@ -49,7 +64,26 @@ pub async fn callback(
     State(state): State<Arc<AppState>>,
     Query(query): Query<CallbackQuery>,
 ) -> Result<Response, AppError> {
+    // Check if OAuth is enabled
+    let enabled = state.db.get_setting("enable_oauth")
+        .ok().flatten()
+        .map(|v| v == "true")
+        .unwrap_or(true);
+    if !enabled {
+        return Err(AppError::Forbidden("OAuth login is disabled".into()));
+    }
+
     let client = reqwest::Client::new();
+
+    let client_id = state.db.get_setting("oauth_client_id")
+        .ok().flatten()
+        .unwrap_or_else(|| state.config.oauth.client_id.clone());
+    let client_secret = state.db.get_setting("oauth_client_secret")
+        .ok().flatten()
+        .unwrap_or_else(|| state.config.oauth.client_secret.clone());
+    let redirect_uri = state.db.get_setting("oauth_redirect_uri")
+        .ok().flatten()
+        .unwrap_or_else(|| state.config.oauth.redirect_uri.clone());
 
     // Exchange code for token
     let token_resp = client
@@ -57,9 +91,9 @@ pub async fn callback(
         .form(&[
             ("grant_type", "authorization_code"),
             ("code", &query.code),
-            ("client_id", &state.config.oauth.client_id),
-            ("client_secret", &state.config.oauth.client_secret),
-            ("redirect_uri", &state.config.oauth.redirect_uri),
+            ("client_id", &client_id),
+            ("client_secret", &client_secret),
+            ("redirect_uri", &redirect_uri),
         ])
         .send()
         .await
@@ -94,7 +128,9 @@ pub async fn callback(
         .map_err(|e| AppError::Internal(format!("User info parse error: {e}")))?;
 
     let trust_level = ldo_user.trust_level.unwrap_or(0);
-    let min_trust = state.config.server.min_trust_level;
+    let min_trust = state.db.get_setting("min_trust_level")
+        .ok().flatten().and_then(|v| v.parse::<i32>().ok())
+        .unwrap_or(state.config.server.min_trust_level);
 
     if trust_level < min_trust {
         // Return an HTML error page instead of JSON for OAuth callback
@@ -153,7 +189,10 @@ pub async fn callback(
     let session = state.db.create_session(&user_id)?;
 
     // Set cookie and redirect
-    let secure = if state.config.oauth.redirect_uri.starts_with("https") {
+    let redirect_uri_for_secure = state.db.get_setting("oauth_redirect_uri")
+        .ok().flatten()
+        .unwrap_or_else(|| state.config.oauth.redirect_uri.clone());
+    let secure = if redirect_uri_for_secure.starts_with("https") {
         "; Secure"
     } else {
         ""
@@ -192,7 +231,10 @@ pub async fn logout(
     if let Some(session_id) = extract_session_id(&headers) {
         state.db.delete_session(&session_id)?;
     }
-    let secure = if state.config.oauth.redirect_uri.starts_with("https") {
+    let redirect_uri_for_secure = state.db.get_setting("oauth_redirect_uri")
+        .ok().flatten()
+        .unwrap_or_else(|| state.config.oauth.redirect_uri.clone());
+    let secure = if redirect_uri_for_secure.starts_with("https") {
         "; Secure"
     } else {
         ""
@@ -388,6 +430,75 @@ pub async fn login_password(
         session.id
     );
     let mut response = Json(json!({ "message": "Login successful" })).into_response();
+    response.headers_mut()
+        .insert("Set-Cookie", HeaderValue::from_str(&cookie).unwrap());
+    Ok(response)
+}
+
+// --- Auth Options & Registration ---
+
+/// Public endpoint — returns which login/register methods are available.
+pub async fn auth_options(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let enable_oauth = state.db.get_setting("enable_oauth")
+        .ok().flatten()
+        .map(|v| v == "true")
+        .unwrap_or(true);
+    let allow_registration = state.db.get_setting("allow_registration")
+        .ok().flatten()
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    Json(json!({
+        "enable_oauth": enable_oauth,
+        "allow_registration": allow_registration,
+    }))
+}
+
+pub async fn register(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PasswordLoginRequest>,
+) -> Result<Response, AppError> {
+    // Check if registration is allowed
+    let allowed = state.db.get_setting("allow_registration")
+        .ok().flatten()
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    if !allowed {
+        return Err(AppError::Forbidden("User registration is disabled".into()));
+    }
+
+    if req.username.is_empty() || req.password.is_empty() {
+        return Err(AppError::BadRequest("Username and password are required".into()));
+    }
+
+    // Check if username exists
+    if state.db.get_user_by_username(&req.username)?.is_some() {
+        return Err(AppError::Conflict("Username already exists".into()));
+    }
+
+    // Hash password
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = Argon2::default()
+        .hash_password(req.password.as_bytes(), &salt)
+        .map_err(|e| AppError::Internal(format!("Hash error: {e}")))?
+        .to_string();
+
+    let min_trust = state.db.get_setting("min_trust_level")
+        .ok().flatten()
+        .and_then(|v| v.parse::<i32>().ok())
+        .unwrap_or(1);
+
+    let user = state.db.create_password_user(&req.username, &hash, min_trust)?;
+
+    // Auto-login: create session
+    let session = state.db.create_session(&user.id)?;
+    let cookie = format!(
+        "{COOKIE_NAME}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800",
+        session.id
+    );
+    let mut response = Json(json!({ "message": "Registration successful" })).into_response();
     response.headers_mut()
         .insert("Set-Cookie", HeaderValue::from_str(&cookie).unwrap());
     Ok(response)

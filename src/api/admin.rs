@@ -1,3 +1,4 @@
+use crate::config::write_settings_to_config;
 use crate::error::AppError;
 use crate::AppState;
 use argon2::password_hash::{SaltString, rand_core::OsRng};
@@ -56,7 +57,9 @@ pub async fn delete_proxy(
 pub async fn cleanup_proxies(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let threshold = state.config.validation.error_threshold;
+    let threshold = state.db.get_setting("validation_error_threshold")
+        .ok().flatten().and_then(|v| v.parse().ok())
+        .unwrap_or(state.config.validation.error_threshold);
     let count = state.db.cleanup_high_error_proxies(threshold)?;
 
     // Remove from pool too
@@ -172,7 +175,9 @@ pub async fn create_password_user(
         .map_err(|e| AppError::Internal(format!("Hash error: {e}")))?
         .to_string();
 
-    let trust_level = state.config.server.min_trust_level;
+    let trust_level = state.db.get_setting("min_trust_level")
+        .ok().flatten().and_then(|v| v.parse().ok())
+        .unwrap_or(state.config.server.min_trust_level);
     let user = state.db.create_password_user(&req.username, &hash, trust_level)?;
 
     Ok(Json(json!({
@@ -209,4 +214,30 @@ pub async fn reset_user_password(
     state.db.update_user_password(&id, &hash)?;
 
     Ok(Json(json!({ "message": "Password updated" })))
+}
+
+// --- Settings Management ---
+
+pub async fn get_settings(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let settings = state.db.get_all_settings()?;
+    Ok(Json(json!(settings)))
+}
+
+pub async fn update_settings(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // 1. Write to DB
+    state.db.set_all_settings(&req)?;
+
+    // 2. Write back to config.toml
+    if let Err(e) = write_settings_to_config(&req, &state.config_path) {
+        tracing::error!("Failed to write settings to config file: {e}");
+        return Err(AppError::Internal(format!("Settings saved to DB but config file write failed: {e}")));
+    }
+
+    tracing::info!("Settings updated via admin UI ({} keys)", req.len());
+    Ok(Json(json!({ "message": "Settings saved" })))
 }

@@ -139,6 +139,101 @@ tr:hover td { background:rgba(108,99,255,.03); }
     </div>
   </div>
 
+  <!-- Settings Panel -->
+  <div class="section">
+    <div class="section-title">系统设置 <span style="font-weight:400;font-size:13px;color:var(--text-dim)">(修改后点击保存生效)</span></div>
+    <div class="card">
+      <div class="grid-2">
+        <div>
+          <div class="form-group">
+            <label>管理员密码</label>
+            <input id="s-admin_password" type="password" placeholder="admin password">
+          </div>
+          <div class="form-group">
+            <label>最低信任等级</label>
+            <input id="s-min_trust_level" type="number" placeholder="1">
+          </div>
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px">
+              <input id="s-allow_registration" type="checkbox" style="width:auto">
+              允许用户注册
+            </label>
+          </div>
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px">
+              <input id="s-enable_oauth" type="checkbox" style="width:auto">
+              启用 OAuth 登录
+            </label>
+          </div>
+        </div>
+        <div>
+          <div class="form-group">
+            <label>OAuth Client ID</label>
+            <input id="s-oauth_client_id" placeholder="client_id">
+          </div>
+          <div class="form-group">
+            <label>OAuth Client Secret</label>
+            <input id="s-oauth_client_secret" type="password" placeholder="client_secret">
+          </div>
+          <div class="form-group">
+            <label>OAuth Redirect URI</label>
+            <input id="s-oauth_redirect_uri" placeholder="https://...">
+          </div>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);margin:16px 0;padding-top:16px">
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px">验证 & 质检</div>
+        <div class="grid-2">
+          <div>
+            <div class="form-group">
+              <label>验证 URL</label>
+              <input id="s-validation_url" placeholder="https://www.bing.com">
+            </div>
+            <div class="form-group">
+              <label>验证超时 (秒)</label>
+              <input id="s-validation_timeout_secs" type="number">
+            </div>
+            <div class="form-group">
+              <label>验证并发数</label>
+              <input id="s-validation_concurrency" type="number">
+            </div>
+            <div class="form-group">
+              <label>验证间隔 (分钟)</label>
+              <input id="s-validation_interval_mins" type="number">
+            </div>
+          </div>
+          <div>
+            <div class="form-group">
+              <label>错误阈值</label>
+              <input id="s-validation_error_threshold" type="number">
+            </div>
+            <div class="form-group">
+              <label>验证批大小</label>
+              <input id="s-validation_batch_size" type="number">
+            </div>
+            <div class="form-group">
+              <label>质检间隔 (分钟)</label>
+              <input id="s-quality_interval_mins" type="number">
+            </div>
+            <div class="form-group">
+              <label>质检并发数</label>
+              <input id="s-quality_concurrency" type="number">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);margin:16px 0;padding-top:16px">
+        <div class="grid-2">
+          <div class="form-group">
+            <label>订阅自动刷新间隔 (分钟, 0=禁用)</label>
+            <input id="s-subscription_auto_refresh_interval_mins" type="number">
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveSettings()" style="margin-top:8px">💾 保存设置</button>
+    </div>
+  </div>
+
   <!-- User Management -->
   <div class="section">
     <div class="section-title">用户管理 <span id="user-count" style="font-weight:400;font-size:13px;color:var(--text-dim)"></span></div>
@@ -668,7 +763,57 @@ async function createPasswordUser() {
   }
 }
 
-function refresh() { loadStats(); loadUsers(); loadSubscriptions(); loadProxies(); }
+// --- Settings ---
+const settingsKeys = [
+  'admin_password','min_trust_level','allow_registration','enable_oauth',
+  'oauth_client_id','oauth_client_secret','oauth_redirect_uri',
+  'validation_url','validation_timeout_secs','validation_concurrency',
+  'validation_interval_mins','validation_error_threshold','validation_batch_size',
+  'quality_interval_mins','quality_concurrency',
+  'subscription_auto_refresh_interval_mins'
+];
+
+async function loadSettings() {
+  const d = await api('/api/admin/settings');
+  if(!d) return;
+  for(const k of settingsKeys) {
+    const el = document.getElementById('s-'+k);
+    if(!el) continue;
+    if(el.type === 'checkbox') el.checked = d[k] === 'true';
+    else el.value = d[k] || '';
+  }
+}
+
+async function saveSettings() {
+  const payload = {};
+  for(const k of settingsKeys) {
+    const el = document.getElementById('s-'+k);
+    if(!el) continue;
+    if(el.type === 'checkbox') payload[k] = el.checked ? 'true' : 'false';
+    else payload[k] = el.value;
+  }
+  // If admin password changed, warn user
+  const newPwd = payload.admin_password;
+  if(newPwd && newPwd !== getPassword()) {
+    if(!confirm('管理员密码已修改，保存后将使用新密码登录。确定？')) return;
+  }
+  const d = await api('/api/admin/settings', {
+    method: 'PUT',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if(d && d.message) {
+    toast('✅ ' + d.message);
+    // Update stored password if changed
+    if(newPwd && newPwd !== getPassword()) {
+      localStorage.setItem(STORAGE_KEY, newPwd);
+    }
+  } else if(d && d.error) {
+    toast('❌ ' + d.error);
+  }
+}
+
+function refresh() { loadStats(); loadUsers(); loadSubscriptions(); loadProxies(); loadSettings(); }
 
 // Init: check auth
 checkAuth();

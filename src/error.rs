@@ -8,6 +8,8 @@ pub enum AppError {
     BadRequest(String),
     Internal(String),
     Unauthorized(String),
+    Forbidden(String),
+    Conflict(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -17,6 +19,8 @@ impl std::fmt::Display for AppError {
             AppError::BadRequest(msg) => write!(f, "Bad request: {msg}"),
             AppError::Internal(msg) => write!(f, "Internal error: {msg}"),
             AppError::Unauthorized(msg) => write!(f, "Unauthorized: {msg}"),
+            AppError::Forbidden(msg) => write!(f, "Forbidden: {msg}"),
+            AppError::Conflict(msg) => write!(f, "Conflict: {msg}"),
         }
     }
 }
@@ -28,6 +32,8 @@ impl IntoResponse for AppError {
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
             AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
         };
         let body = axum::Json(json!({ "error": message }));
         (status, body).into_response()
