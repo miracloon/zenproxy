@@ -64,6 +64,9 @@ pub struct User {
     pub api_key: String,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(skip_serializing)]
+    pub password_hash: Option<String>,
+    pub auth_source: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -156,6 +159,18 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_users_api_key ON users(api_key);
             ",
         )?;
+
+        // v0.3.2 migration: add password auth fields
+        let has_auth_source: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='auth_source'")?
+            .query_row([], |r| r.get::<_, i32>(0))
+            .map(|c| c > 0)?;
+        if !has_auth_source {
+            conn.execute_batch(
+                "ALTER TABLE users ADD COLUMN password_hash TEXT;
+                 ALTER TABLE users ADD COLUMN auth_source TEXT NOT NULL DEFAULT 'oauth';"
+            )?;
+        }
         Ok(())
     }
 
@@ -481,8 +496,8 @@ impl Database {
     pub fn upsert_user(&self, user: &User) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO users (id, username, name, avatar_template, active, trust_level, silenced, is_banned, api_key, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "INSERT INTO users (id, username, name, avatar_template, active, trust_level, silenced, is_banned, api_key, created_at, updated_at, password_hash, auth_source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET
                 username = excluded.username,
                 name = excluded.name,
@@ -494,7 +509,8 @@ impl Database {
             params![
                 user.id, user.username, user.name, user.avatar_template,
                 user.active as i32, user.trust_level, user.silenced as i32,
-                user.is_banned as i32, user.api_key, user.created_at, user.updated_at
+                user.is_banned as i32, user.api_key, user.created_at, user.updated_at,
+                user.password_hash, user.auth_source
             ],
         )?;
         Ok(())
@@ -503,7 +519,7 @@ impl Database {
     pub fn get_user_by_id(&self, id: &str) -> Result<Option<User>, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, username, name, avatar_template, active, trust_level, silenced, is_banned, api_key, created_at, updated_at
+            "SELECT id, username, name, avatar_template, active, trust_level, silenced, is_banned, api_key, created_at, updated_at, password_hash, auth_source
              FROM users WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| {
@@ -519,6 +535,8 @@ impl Database {
                 api_key: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                password_hash: row.get(11)?,
+                auth_source: row.get(12)?,
             })
         })?;
         Ok(rows.next().transpose()?)
@@ -527,7 +545,7 @@ impl Database {
     pub fn get_user_by_api_key(&self, api_key: &str) -> Result<Option<User>, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, username, name, avatar_template, active, trust_level, silenced, is_banned, api_key, created_at, updated_at
+            "SELECT id, username, name, avatar_template, active, trust_level, silenced, is_banned, api_key, created_at, updated_at, password_hash, auth_source
              FROM users WHERE api_key = ?1"
         )?;
         let mut rows = stmt.query_map(params![api_key], |row| {
@@ -543,6 +561,8 @@ impl Database {
                 api_key: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                password_hash: row.get(11)?,
+                auth_source: row.get(12)?,
             })
         })?;
         Ok(rows.next().transpose()?)
@@ -551,7 +571,7 @@ impl Database {
     pub fn get_all_users(&self) -> Result<Vec<User>, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, username, name, avatar_template, active, trust_level, silenced, is_banned, api_key, created_at, updated_at
+            "SELECT id, username, name, avatar_template, active, trust_level, silenced, is_banned, api_key, created_at, updated_at, password_hash, auth_source
              FROM users ORDER BY created_at DESC"
         )?;
         let rows = stmt.query_map([], |row| {
@@ -567,6 +587,8 @@ impl Database {
                 api_key: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                password_hash: row.get(11)?,
+                auth_source: row.get(12)?,
             })
         })?;
         rows.collect()
@@ -655,5 +677,61 @@ impl Database {
         let now = chrono::Utc::now().to_rfc3339();
         let count = conn.execute("DELETE FROM sessions WHERE expires_at < ?1", params![now])?;
         Ok(count)
+    }
+
+    // --- Password User CRUD ---
+
+    pub fn get_user_by_username(&self, username: &str) -> Result<Option<User>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, username, name, avatar_template, active, trust_level, silenced, is_banned, api_key, created_at, updated_at, password_hash, auth_source
+             FROM users WHERE username = ?1"
+        )?;
+        let mut rows = stmt.query_map(params![username], |row| {
+            Ok(User {
+                id: row.get(0)?,
+                username: row.get(1)?,
+                name: row.get(2)?,
+                avatar_template: row.get(3)?,
+                active: row.get::<_, i32>(4)? != 0,
+                trust_level: row.get(5)?,
+                silenced: row.get::<_, i32>(6)? != 0,
+                is_banned: row.get::<_, i32>(7)? != 0,
+                api_key: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                password_hash: row.get(11)?,
+                auth_source: row.get(12)?,
+            })
+        })?;
+        Ok(rows.next().transpose()?)
+    }
+
+    pub fn create_password_user(&self, username: &str, password_hash: &str, trust_level: i32) -> Result<User, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let id = uuid::Uuid::new_v4().to_string();
+        let api_key = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO users (id, username, name, avatar_template, active, trust_level, silenced, is_banned, api_key, created_at, updated_at, password_hash, auth_source)
+             VALUES (?1, ?2, NULL, NULL, 1, ?3, 0, 0, ?4, ?5, ?5, ?6, 'password')",
+            params![id, username, trust_level, api_key, now, password_hash],
+        )?;
+        Ok(User {
+            id, username: username.to_string(), name: None, avatar_template: None,
+            active: true, trust_level, silenced: false, is_banned: false,
+            api_key, created_at: now.clone(), updated_at: now,
+            password_hash: Some(password_hash.to_string()), auth_source: "password".to_string(),
+        })
+    }
+
+    pub fn update_user_password(&self, user_id: &str, password_hash: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE users SET password_hash = ?1, updated_at = ?2 WHERE id = ?3",
+            params![password_hash, now, user_id],
+        )?;
+        Ok(())
     }
 }

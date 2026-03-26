@@ -11,7 +11,7 @@ use axum::{
     http::{Request, StatusCode},
     middleware::{self, Next},
     response::Response,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use axum::extract::DefaultBodyLimit;
@@ -25,7 +25,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/auth/callback", get(auth::callback))
         .route("/api/auth/me", get(auth::me))
         .route("/api/auth/logout", post(auth::logout))
-        .route("/api/auth/regenerate-key", post(auth::regenerate_key));
+        .route("/api/auth/regenerate-key", post(auth::regenerate_key))
+        .route("/api/auth/login/password", post(auth::login_password));
 
     // Admin routes — protected by admin password
     let admin_routes = Router::new()
@@ -39,6 +40,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/admin/users/:id", delete(admin::delete_user))
         .route("/api/admin/users/:id/ban", post(admin::ban_user))
         .route("/api/admin/users/:id/unban", post(admin::unban_user))
+        .route("/api/admin/users/create", post(admin::create_password_user))
+        .route("/api/admin/users/:id/password", put(admin::reset_user_password))
         .route(
             "/api/subscriptions",
             get(subscription::list_subscriptions).post(subscription::add_subscription),

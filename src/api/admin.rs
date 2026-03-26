@@ -1,5 +1,7 @@
 use crate::error::AppError;
 use crate::AppState;
+use argon2::password_hash::{SaltString, rand_core::OsRng};
+use argon2::{Argon2, PasswordHasher};
 use axum::extract::{Path, State};
 use axum::Json;
 use serde_json::json;
@@ -141,4 +143,70 @@ pub async fn unban_user(
 ) -> Result<Json<serde_json::Value>, AppError> {
     state.db.set_user_banned(&id, false)?;
     Ok(Json(json!({ "message": "User unbanned" })))
+}
+
+// --- Password User Management ---
+
+#[derive(Debug, serde::Deserialize)]
+pub struct CreatePasswordUserRequest {
+    pub username: String,
+    pub password: String,
+}
+
+pub async fn create_password_user(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreatePasswordUserRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if req.username.is_empty() || req.password.is_empty() {
+        return Err(AppError::Internal("Username and password are required".into()));
+    }
+
+    // Check if username already exists
+    if state.db.get_user_by_username(&req.username)?.is_some() {
+        return Err(AppError::Internal("Username already exists".into()));
+    }
+
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = Argon2::default()
+        .hash_password(req.password.as_bytes(), &salt)
+        .map_err(|e| AppError::Internal(format!("Hash error: {e}")))?
+        .to_string();
+
+    let trust_level = state.config.server.min_trust_level;
+    let user = state.db.create_password_user(&req.username, &hash, trust_level)?;
+
+    Ok(Json(json!({
+        "message": "User created",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "api_key": user.api_key,
+            "auth_source": user.auth_source,
+        }
+    })))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ResetPasswordRequest {
+    pub password: String,
+}
+
+pub async fn reset_user_password(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<ResetPasswordRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if req.password.is_empty() {
+        return Err(AppError::Internal("Password is required".into()));
+    }
+
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = Argon2::default()
+        .hash_password(req.password.as_bytes(), &salt)
+        .map_err(|e| AppError::Internal(format!("Hash error: {e}")))?
+        .to_string();
+
+    state.db.update_user_password(&id, &hash)?;
+
+    Ok(Json(json!({ "message": "Password updated" })))
 }

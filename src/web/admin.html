@@ -142,9 +142,22 @@ tr:hover td { background:rgba(108,99,255,.03); }
   <!-- User Management -->
   <div class="section">
     <div class="section-title">用户管理 <span id="user-count" style="font-weight:400;font-size:13px;color:var(--text-dim)"></span></div>
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
+        <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0">
+          <label>用户名</label>
+          <input id="new-user-username" placeholder="输入用户名">
+        </div>
+        <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0">
+          <label>密码</label>
+          <input id="new-user-password" type="password" placeholder="输入密码">
+        </div>
+        <button class="btn btn-primary" onclick="createPasswordUser()">创建密码用户</button>
+      </div>
+    </div>
     <div class="card">
       <table>
-        <thead><tr><th>ID</th><th>用户名</th><th>昵称</th><th>信任等级</th><th>状态</th><th>API Key</th><th>注册时间</th><th>操作</th></tr></thead>
+        <thead><tr><th>ID</th><th>用户名</th><th>昵称</th><th>来源</th><th>信任等级</th><th>状态</th><th>API Key</th><th>注册时间</th><th>操作</th></tr></thead>
         <tbody id="user-table"></tbody>
       </table>
       <div class="empty" id="user-empty">暂无注册用户</div>
@@ -377,6 +390,9 @@ async function loadUsers() {
     const statusBadge = u.is_banned
       ? '<span class="badge badge-banned">已封禁</span>'
       : '<span class="badge badge-active">正常</span>';
+    const sourceBadge = u.auth_source === 'password'
+      ? '<span class="badge badge-type">密码</span>'
+      : '<span class="badge badge-valid">OAuth</span>';
     const actions = u.is_banned
       ? `<button class="btn btn-success btn-sm" onclick="unbanUser('${esc(u.id)}')">解封</button>`
       : `<button class="btn btn-warn btn-sm" onclick="banUser('${esc(u.id)}')">封禁</button>`;
@@ -384,6 +400,7 @@ async function loadUsers() {
       <td>${esc(u.id)}</td>
       <td>${esc(u.username)}</td>
       <td>${esc(u.name||'-')}</td>
+      <td>${sourceBadge}</td>
       <td>${u.trust_level}</td>
       <td>${statusBadge}</td>
       <td class="api-key-cell" title="${esc(u.api_key)}">${esc(u.api_key)}</td>
@@ -629,6 +646,26 @@ async function cleanupUselessProxies() {
   }
   toast('已删除 ' + deleted + ' 个三不通代理');
   refresh();
+}
+
+async function createPasswordUser() {
+  const username = document.getElementById('new-user-username').value.trim();
+  const password = document.getElementById('new-user-password').value;
+  if (!username || !password) return toast('请输入用户名和密码');
+  if (password.length < 6) return toast('密码至少 6 个字符');
+  const d = await api('/api/admin/users/create', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  if (d && d.user) {
+    toast('用户已创建: ' + d.user.username);
+    document.getElementById('new-user-username').value = '';
+    document.getElementById('new-user-password').value = '';
+    loadUsers();
+  } else if (d && d.error) {
+    toast('创建失败: ' + d.error);
+  }
 }
 
 function refresh() { loadStats(); loadUsers(); loadSubscriptions(); loadProxies(); }

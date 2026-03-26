@@ -1,6 +1,7 @@
 use crate::db::User;
 use crate::error::AppError;
 use crate::AppState;
+use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Redirect, Response};
@@ -142,6 +143,8 @@ pub async fn callback(
         api_key,
         created_at: now.clone(),
         updated_at: now,
+        password_hash: None,
+        auth_source: "oauth".to_string(),
     };
 
     state.db.upsert_user(&user)?;
@@ -346,4 +349,46 @@ fn get_cached_user(state: &AppState, cache_key: &str) -> Option<User> {
 fn cache_user(state: &AppState, cache_key: &str, user: &User) {
     let expires = tokio::time::Instant::now() + AUTH_CACHE_TTL;
     state.auth_cache.insert(cache_key.to_string(), (user.clone(), expires));
+}
+
+// --- Password Login ---
+
+#[derive(Debug, Deserialize)]
+pub struct PasswordLoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+pub async fn login_password(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PasswordLoginRequest>,
+) -> Result<Response, AppError> {
+    let user = state.db.get_user_by_username(&req.username)?
+        .ok_or_else(|| AppError::Unauthorized("Invalid username or password".into()))?;
+
+    if user.is_banned {
+        return Err(AppError::Unauthorized("Account banned".into()));
+    }
+
+    let hash_str = user.password_hash.as_deref()
+        .ok_or_else(|| AppError::Unauthorized("Invalid username or password".into()))?;
+
+    let parsed_hash = PasswordHash::new(hash_str)
+        .map_err(|_| AppError::Internal("Password hash error".into()))?;
+
+    Argon2::default()
+        .verify_password(req.password.as_bytes(), &parsed_hash)
+        .map_err(|_| AppError::Unauthorized("Invalid username or password".into()))?;
+
+    // Create session (same as OAuth callback flow)
+    let session = state.db.create_session(&user.id)?;
+
+    let cookie = format!(
+        "{COOKIE_NAME}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800",
+        session.id
+    );
+    let mut response = Json(json!({ "message": "Login successful" })).into_response();
+    response.headers_mut()
+        .insert("Set-Cookie", HeaderValue::from_str(&cookie).unwrap());
+    Ok(response)
 }
