@@ -40,7 +40,7 @@ struct LinuxDoUser {
 
 pub async fn login(State(state): State<Arc<AppState>>) -> Response {
     // Check if OAuth is enabled
-    let enabled = state.db.get_setting("enable_oauth")
+    let enabled = state.db.get_setting("linuxdo_oauth_enabled")
         .ok().flatten()
         .map(|v| v == "true")
         .unwrap_or(true);
@@ -48,12 +48,12 @@ pub async fn login(State(state): State<Arc<AppState>>) -> Response {
         return (axum::http::StatusCode::FORBIDDEN, "OAuth login is disabled").into_response();
     }
 
-    let client_id = state.db.get_setting("oauth_client_id")
+    let client_id = state.db.get_setting("linuxdo_client_id")
         .ok().flatten()
-        .unwrap_or_else(|| state.config.oauth.client_id.clone());
-    let redirect_uri = state.db.get_setting("oauth_redirect_uri")
+        .unwrap_or_else(|| state.config.oauth.linuxdo.client_id.clone());
+    let redirect_uri = state.db.get_setting("linuxdo_redirect_uri")
         .ok().flatten()
-        .unwrap_or_else(|| state.config.oauth.redirect_uri.clone());
+        .unwrap_or_else(|| state.config.oauth.linuxdo.redirect_uri.clone());
     let url = format!(
         "{AUTHORIZE_URL}?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code"
     );
@@ -65,7 +65,7 @@ pub async fn callback(
     Query(query): Query<CallbackQuery>,
 ) -> Result<Response, AppError> {
     // Check if OAuth is enabled
-    let enabled = state.db.get_setting("enable_oauth")
+    let enabled = state.db.get_setting("linuxdo_oauth_enabled")
         .ok().flatten()
         .map(|v| v == "true")
         .unwrap_or(true);
@@ -75,15 +75,15 @@ pub async fn callback(
 
     let client = reqwest::Client::new();
 
-    let client_id = state.db.get_setting("oauth_client_id")
+    let client_id = state.db.get_setting("linuxdo_client_id")
         .ok().flatten()
-        .unwrap_or_else(|| state.config.oauth.client_id.clone());
-    let client_secret = state.db.get_setting("oauth_client_secret")
+        .unwrap_or_else(|| state.config.oauth.linuxdo.client_id.clone());
+    let client_secret = state.db.get_setting("linuxdo_client_secret")
         .ok().flatten()
-        .unwrap_or_else(|| state.config.oauth.client_secret.clone());
-    let redirect_uri = state.db.get_setting("oauth_redirect_uri")
+        .unwrap_or_else(|| state.config.oauth.linuxdo.client_secret.clone());
+    let redirect_uri = state.db.get_setting("linuxdo_redirect_uri")
         .ok().flatten()
-        .unwrap_or_else(|| state.config.oauth.redirect_uri.clone());
+        .unwrap_or_else(|| state.config.oauth.linuxdo.redirect_uri.clone());
 
     // Exchange code for token
     let token_resp = client
@@ -128,9 +128,9 @@ pub async fn callback(
         .map_err(|e| AppError::Internal(format!("User info parse error: {e}")))?;
 
     let trust_level = ldo_user.trust_level.unwrap_or(0);
-    let min_trust = state.db.get_setting("min_trust_level")
+    let min_trust = state.db.get_setting("linuxdo_min_trust_level")
         .ok().flatten().and_then(|v| v.parse::<i32>().ok())
-        .unwrap_or(state.config.server.min_trust_level);
+        .unwrap_or(state.config.oauth.linuxdo.min_trust_level);
 
     if trust_level < min_trust {
         // Return an HTML error page instead of JSON for OAuth callback
@@ -181,6 +181,7 @@ pub async fn callback(
         updated_at: now,
         password_hash: None,
         auth_source: "oauth".to_string(),
+        role: "user".to_string(),
     };
 
     state.db.upsert_user(&user)?;
@@ -189,9 +190,9 @@ pub async fn callback(
     let session = state.db.create_session(&user_id)?;
 
     // Set cookie and redirect
-    let redirect_uri_for_secure = state.db.get_setting("oauth_redirect_uri")
+    let redirect_uri_for_secure = state.db.get_setting("linuxdo_redirect_uri")
         .ok().flatten()
-        .unwrap_or_else(|| state.config.oauth.redirect_uri.clone());
+        .unwrap_or_else(|| state.config.oauth.linuxdo.redirect_uri.clone());
     let secure = if redirect_uri_for_secure.starts_with("https") {
         "; Secure"
     } else {
@@ -221,6 +222,7 @@ pub async fn me(
         "trust_level": user.trust_level,
         "api_key": user.api_key,
         "created_at": user.created_at,
+        "role": user.role,
     })))
 }
 
@@ -231,9 +233,9 @@ pub async fn logout(
     if let Some(session_id) = extract_session_id(&headers) {
         state.db.delete_session(&session_id)?;
     }
-    let redirect_uri_for_secure = state.db.get_setting("oauth_redirect_uri")
+    let redirect_uri_for_secure = state.db.get_setting("linuxdo_redirect_uri")
         .ok().flatten()
-        .unwrap_or_else(|| state.config.oauth.redirect_uri.clone());
+        .unwrap_or_else(|| state.config.oauth.linuxdo.redirect_uri.clone());
     let secure = if redirect_uri_for_secure.starts_with("https") {
         "; Secure"
     } else {
@@ -441,7 +443,7 @@ pub async fn login_password(
 pub async fn auth_options(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
-    let enable_oauth = state.db.get_setting("enable_oauth")
+    let enable_oauth = state.db.get_setting("linuxdo_oauth_enabled")
         .ok().flatten()
         .map(|v| v == "true")
         .unwrap_or(true);
@@ -451,7 +453,7 @@ pub async fn auth_options(
         .unwrap_or(false);
 
     Json(json!({
-        "enable_oauth": enable_oauth,
+        "linuxdo_oauth_enabled": enable_oauth,
         "allow_registration": allow_registration,
     }))
 }
@@ -485,12 +487,12 @@ pub async fn register(
         .map_err(|e| AppError::Internal(format!("Hash error: {e}")))?
         .to_string();
 
-    let min_trust = state.db.get_setting("min_trust_level")
+    let min_trust = state.db.get_setting("linuxdo_min_trust_level")
         .ok().flatten()
         .and_then(|v| v.parse::<i32>().ok())
         .unwrap_or(1);
 
-    let user = state.db.create_password_user(&req.username, &hash, min_trust)?;
+    let user = state.db.create_password_user(&req.username, &hash, min_trust, "user")?;
 
     // Auto-login: create session
     let session = state.db.create_session(&user.id)?;

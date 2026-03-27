@@ -1,15 +1,14 @@
 [server]
 host = "0.0.0.0"
 port = 3000
-admin_password = "change-me"
-min_trust_level = 1
 allow_registration = false
-enable_oauth = true
 
-[oauth]
+[oauth.linuxdo]
+enabled = true
 client_id = ""
 client_secret = ""
 redirect_uri = "https://your-domain.com/api/auth/callback"
+min_trust_level = 1
 
 [singbox]
 binary_path = "/app/sing-box"

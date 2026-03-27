@@ -175,10 +175,10 @@ pub async fn create_password_user(
         .map_err(|e| AppError::Internal(format!("Hash error: {e}")))?
         .to_string();
 
-    let trust_level = state.db.get_setting("min_trust_level")
+    let trust_level = state.db.get_setting("linuxdo_min_trust_level")
         .ok().flatten().and_then(|v| v.parse().ok())
-        .unwrap_or(state.config.server.min_trust_level);
-    let user = state.db.create_password_user(&req.username, &hash, trust_level)?;
+        .unwrap_or(1);
+    let user = state.db.create_password_user(&req.username, &hash, trust_level, "user")?;
 
     Ok(Json(json!({
         "message": "User created",

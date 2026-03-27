@@ -91,24 +91,15 @@ async fn admin_auth(
     request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Read admin_password from DB settings (runtime), fallback to config
-    let expected = state.db.get_setting("admin_password")
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| state.config.server.admin_password.clone());
+    // Session-based admin auth: require valid session with admin or super_admin role
+    let user = auth::extract_session_user(&state, request.headers())
+        .await
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-    let authorized = request
-        .headers()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(|token| token == expected)
-        .unwrap_or(false);
-
-    if authorized {
+    if user.role == "admin" || user.role == "super_admin" {
         Ok(next.run(request).await)
     } else {
-        Err(StatusCode::UNAUTHORIZED)
+        Err(StatusCode::FORBIDDEN)
     }
 }
 
