@@ -28,21 +28,23 @@ type BindingInfo struct {
 
 // BindingManager holds state for dynamic proxy bindings.
 type BindingManager struct {
-	server   *Server
-	logger   log.ContextLogger
-	bindings map[string]*BindingInfo
-	mu       sync.Mutex
-	store    *ProxyStore
-	portPool *PortPool
+	server         *Server
+	logger         log.ContextLogger
+	bindings       map[string]*BindingInfo
+	mu             sync.Mutex
+	store          *ProxyStore
+	portPool       *PortPool
+	syncRemotePort bool
 }
 
-func newBindingManager(server *Server, logFactory log.Factory, store *ProxyStore, portPool *PortPool) *BindingManager {
+func newBindingManager(server *Server, logFactory log.Factory, store *ProxyStore, portPool *PortPool, syncRemotePort bool) *BindingManager {
 	return &BindingManager{
-		server:   server,
-		logger:   logFactory.NewLogger("bindings"),
-		bindings: make(map[string]*BindingInfo),
-		store:    store,
-		portPool: portPool,
+		server:         server,
+		logger:         logFactory.NewLogger("bindings"),
+		bindings:       make(map[string]*BindingInfo),
+		store:          store,
+		portPool:       portPool,
+		syncRemotePort: syncRemotePort,
 	}
 }
 

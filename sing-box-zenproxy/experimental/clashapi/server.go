@@ -109,7 +109,8 @@ func NewServer(ctx context.Context, logFactory log.ObservableFactory, options op
 	portStart := getEnvUint16("PROXY_PORT_START", 60001)
 	portEnd := getEnvUint16("PROXY_PORT_END", 65535)
 	portPool := newPortPool(portStart, portEnd-portStart+1, logFactory.NewLogger("port-pool"))
-	s.bindingManager = newBindingManager(s, logFactory, proxyStore, portPool)
+	syncRemotePort := os.Getenv("SYNC_REMOTE_PORT") == "true"
+	s.bindingManager = newBindingManager(s, logFactory, proxyStore, portPool, syncRemotePort)
 	defaultMode := "Rule"
 	if options.DefaultMode != "" {
 		defaultMode = options.DefaultMode
