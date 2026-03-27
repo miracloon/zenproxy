@@ -52,13 +52,18 @@ async fn main() {
         tracing::error!("Failed to seed settings: {e}");
     }
 
-    // Initialize proxy pool from database
+    // Initialize proxy pool from database (includes saved local_port values)
     let pool = ProxyPool::new();
     pool.load_from_db(&db);
 
-    // Clear stale local_port values — sing-box starts fresh, old ports have no bindings
+    // Save old port assignments before clearing memory state
+    let old_ports: std::collections::HashMap<String, u16> = pool.get_valid_proxies()
+        .iter()
+        .filter_map(|p| p.local_port.map(|port| (p.id.clone(), port)))
+        .collect();
+
+    // Clear memory state (sing-box starts fresh, no active bindings yet)
     pool.clear_all_local_ports();
-    db.clear_all_proxy_local_ports().ok();
 
     // Initialize SingboxManager and start with minimal config
     let mut manager = SingboxManager::new(config.singbox.clone(), config.validation.batch_size as u16);
@@ -66,24 +71,38 @@ async fn main() {
         tracing::warn!("Failed to start sing-box: {e}");
     }
 
-    // Create initial bindings for valid proxies
+    // Create initial bindings for valid proxies, reusing old port assignments
     {
         let mut proxies = pool.get_valid_proxies();
         proxies.truncate(config.singbox.max_proxies);
         if !proxies.is_empty() {
-            let desired: Vec<(String, serde_json::Value)> = proxies
-                .iter()
-                .map(|p| (p.id.clone(), p.singbox_outbound.clone()))
-                .collect();
-            // No existing bindings at startup
-            let assignments = manager.sync_bindings(&desired, &[]).await;
-            for (id, port) in &assignments {
-                pool.set_local_port(id, *port);
-                db.update_proxy_local_port(id, *port as i32).ok();
+            let mut restored = 0usize;
+            let mut fresh = 0usize;
+            for p in &proxies {
+                let result = if let Some(&old_port) = old_ports.get(&p.id) {
+                    manager.create_binding_on_port(&p.id, old_port, &p.singbox_outbound).await
+                } else {
+                    manager.create_binding(&p.id, &p.singbox_outbound).await
+                };
+                match result {
+                    Ok(port) => {
+                        pool.set_local_port(&p.id, port);
+                        db.update_proxy_local_port(&p.id, port as i32).ok();
+                        if old_ports.get(&p.id) == Some(&port) {
+                            restored += 1;
+                        } else {
+                            fresh += 1;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create binding for {}: {e}", p.id);
+                        db.update_proxy_local_port_null(&p.id).ok();
+                    }
+                }
             }
             tracing::info!(
-                "Created {} initial bindings for valid proxies",
-                assignments.len()
+                "Created {} initial bindings ({} restored, {} new)",
+                restored + fresh, restored, fresh,
             );
         } else {
             tracing::info!("No valid proxies, sing-box running with minimal config");
