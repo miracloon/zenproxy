@@ -222,6 +222,18 @@ func (bm *BindingManager) createBindingForProxy(proxy StoredProxy) (*BindingInfo
 	return binding, nil
 }
 
+// createBindingDirect creates a binding on a specific port without using PortPool.
+// Used in sync_remote_port mode — no fallback on failure.
+func (bm *BindingManager) createBindingDirect(proxy StoredProxy, port uint16) (*BindingInfo, error) {
+	binding, err := bm.createBindingInternal(proxy.ID, port, proxy.Outbound, proxy.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	bm.store.SetLocalPort(proxy.ID, port)
+	return binding, nil
+}
+
 func (bm *BindingManager) deleteBinding(w http.ResponseWriter, r *http.Request) {
 	tag := chi.URLParam(r, "tag")
 

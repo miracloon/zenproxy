@@ -21,6 +21,7 @@ type StoredProxy struct {
 	Source         string          `json:"source"`
 	SubscriptionID string          `json:"subscription_id,omitempty"`
 	LocalPort      uint16          `json:"local_port,omitempty"`
+	RemotePort     uint16          `json:"remote_port,omitempty"`
 	AddedAt        string          `json:"added_at"`
 }
 
