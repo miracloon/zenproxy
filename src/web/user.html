@@ -67,6 +67,9 @@ tr:hover td { background:rgba(108,99,255,.03); }
 .filter-bar input, .filter-bar select { padding:8px 12px; background:#0f1117; border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; outline:none; }
 .filter-bar input:focus, .filter-bar select:focus { border-color:var(--primary); }
 
+.warning-banner { background:linear-gradient(135deg, #f59e0b22, #ef444422); border:1px solid #f59e0b44; border-radius:12px; padding:12px 20px; margin-bottom: 24px; color:#f59e0b; font-size:14px; }
+.warning-banner a { color:#f59e0b; text-decoration:underline; }
+
 /* API Key card */
 .apikey-card { background:linear-gradient(135deg, #1e2235 0%, #1a1d27 100%); border:1px solid var(--border); border-radius:14px; padding:24px; position:relative; overflow:hidden; }
 .apikey-card::before { content:''; position:absolute; top:-50%; right:-30%; width:200px; height:200px; background:radial-gradient(circle, rgba(108,99,255,.08) 0%, transparent 70%); pointer-events:none; }
@@ -132,7 +135,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
   <h1>ZenProxy</h1>
   <div class="nav">
     <a href="/" class="active">仪表盘</a>
-    <a href="/admin">管理后台</a>
+    <a href="/admin" id="admin-link" style="display:none">管理后台</a>
     <a href="/docs">API 文档</a>
     <div class="user-info">
       <span class="username" id="header-username"></span>
@@ -313,6 +316,15 @@ async function checkAuth() {
     document.getElementById('login-overlay').style.display = 'none';
     document.getElementById('app').style.display = '';
     document.getElementById('header-username').textContent = currentUser.username;
+    if (currentUser.role !== 'user') {
+      document.getElementById('admin-link').style.display = '';
+    }
+    if (currentUser.username === 'admin' && currentUser.auth_source === 'password') {
+      const banner = document.createElement('div');
+      banner.className = 'warning-banner';
+      banner.innerHTML = '⚠️ 你正在使用默认账户，请前往 <a href="/admin#users">管理后台 → 用户管理</a> 修改密码和用户名。';
+      document.querySelector('.container').prepend(banner);
+    }
     updateKeyDisplay();
     refresh();
   } catch(e) {
@@ -572,7 +584,7 @@ async function loadAuthOptions() {
     const r = await fetch('/api/auth/options');
     if (!r.ok) return;
     const opts = await r.json();
-    if (opts.enable_oauth) {
+    if (opts.linuxdo_oauth_enabled) {
       document.getElementById('oauth-section').style.display = '';
     }
     if (opts.allow_registration) {
