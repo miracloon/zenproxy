@@ -35,6 +35,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/admin/proxies", get(admin::proxies::list_proxies))
         .route("/api/admin/proxies/:id", delete(admin::proxies::delete_proxy))
         .route("/api/admin/proxies/:id/toggle", post(admin::proxies::toggle_proxy))
+        .route("/api/admin/proxies/:id/validate", post(admin::proxies::validate_single_proxy))
+        .route("/api/admin/proxies/:id/quality", post(admin::proxies::quality_check_single_proxy))
         .route("/api/admin/proxies/cleanup", post(admin::proxies::cleanup_proxies))
         .route("/api/admin/validate", post(admin::proxies::trigger_validation))
         .route("/api/admin/quality-check", post(admin::proxies::trigger_quality_check))
