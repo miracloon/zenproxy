@@ -22,6 +22,7 @@ pub async fn list_proxies(
                 "local_port": p.local_port,
                 "status": p.status,
                 "error_count": p.error_count,
+                "is_disabled": p.is_disabled,
                 "quality": p.quality.as_ref().map(|q| json!({
                     "ip_address": q.ip_address,
                     "country": q.country,
@@ -100,5 +101,34 @@ pub async fn trigger_quality_check(
 
     Ok(Json(json!({
         "message": "Quality check started in background"
+    })))
+}
+
+pub async fn toggle_proxy(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let proxy = state.pool.get(&id)
+        .ok_or_else(|| AppError::NotFound("Proxy not found".into()))?;
+
+    let new_disabled = !proxy.is_disabled;
+    state.pool.set_disabled(&id, new_disabled);
+    state.db.set_proxy_disabled(&id, new_disabled)?;
+
+    // If disabling, clear the local port binding
+    if new_disabled {
+        if let Some(port) = proxy.local_port {
+            let mut mgr = state.singbox.lock().await;
+            mgr.remove_binding(&id, port).await.ok();
+            state.pool.clear_local_port(&id);
+            state.db.update_proxy_local_port_null(&id).ok();
+        }
+    }
+
+    let status_str = if new_disabled { "disabled" } else { "enabled" };
+    tracing::info!("Proxy {} {} (name={})", id, status_str, proxy.name);
+    Ok(Json(json!({
+        "message": format!("Proxy {}", status_str),
+        "is_disabled": new_disabled,
     })))
 }

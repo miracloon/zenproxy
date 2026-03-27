@@ -51,7 +51,7 @@ pub async fn check_all(state: Arc<AppState>) -> Result<usize, String> {
             .pool
             .get_valid_proxies()
             .into_iter()
-            .filter(|p| p.local_port.is_some())
+            .filter(|p| p.local_port.is_some() && !p.is_disabled)
             .filter(|p| needs_quality_check(p, &now))
             .collect();
 
@@ -60,7 +60,7 @@ pub async fn check_all(state: Arc<AppState>) -> Result<usize, String> {
                 .pool
                 .get_valid_proxies()
                 .into_iter()
-                .filter(|p| p.local_port.is_none() && needs_quality_check(p, &now))
+                .filter(|p| p.local_port.is_none() && needs_quality_check(p, &now) && !p.is_disabled)
                 .count();
 
             if remaining_without_port > 0 {
@@ -78,7 +78,7 @@ pub async fn check_all(state: Arc<AppState>) -> Result<usize, String> {
                     .pool
                     .get_valid_proxies()
                     .into_iter()
-                    .filter(|p| p.local_port.is_some())
+                    .filter(|p| p.local_port.is_some() && !p.is_disabled)
                     .filter(|p| needs_quality_check(p, &now))
                     .collect();
             }

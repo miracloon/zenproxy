@@ -160,6 +160,7 @@ pub async fn add_subscription(
             local_port: None,
             error_count: 0,
             quality: None,
+            is_disabled: false,
         };
         state.pool.add(pool_proxy);
         added += 1;
@@ -301,6 +302,7 @@ pub async fn refresh_subscription_core(state: &Arc<AppState>, sub: &Subscription
                 local_port: None,
                 error_count: 0,
                 quality: None,
+                is_disabled: false,
             };
             state.pool.add(pool_proxy);
             added += 1;
@@ -390,6 +392,14 @@ pub async fn sync_proxy_bindings(state: &Arc<AppState>, mode: SyncMode) {
 
     let now = chrono::Utc::now();
     for p in all_proxies {
+        if p.is_disabled {
+            // Disabled proxies never get ports
+            if p.local_port.is_some() {
+                state.pool.clear_local_port(&p.id);
+                state.db.update_proxy_local_port_null(&p.id).ok();
+            }
+            continue;
+        }
         match p.status {
             ProxyStatus::Valid => {
                 if matches!(mode, SyncMode::QualityCheck) && needs_quality_check(&p, &now) {
@@ -401,7 +411,7 @@ pub async fn sync_proxy_bindings(state: &Arc<AppState>, mode: SyncMode) {
                 }
             }
             ProxyStatus::Untested => untested.push(p),
-            ProxyStatus::Invalid => invalid.push(p),
+            ProxyStatus::Invalid | ProxyStatus::Disabled => invalid.push(p),
         }
     }
 

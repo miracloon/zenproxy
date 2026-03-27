@@ -9,6 +9,7 @@ pub enum ProxyStatus {
     Untested,
     Valid,
     Invalid,
+    Disabled,
 }
 
 impl ProxyStatus {
@@ -18,6 +19,7 @@ impl ProxyStatus {
             ProxyStatus::Valid => 0,
             ProxyStatus::Untested => 1,
             ProxyStatus::Invalid => 2,
+            ProxyStatus::Disabled => 3,
         }
     }
 }
@@ -35,6 +37,7 @@ pub struct PoolProxy {
     pub local_port: Option<u16>,
     pub error_count: u32,
     pub quality: Option<ProxyQualityInfo>,
+    pub is_disabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -100,8 +103,10 @@ impl ProxyPool {
             let quality = quality_map.get(&row.id).map(|q| ProxyQualityInfo::from(q.clone()));
             let outbound: serde_json::Value =
                 serde_json::from_str(&row.config_json).unwrap_or_default();
-            // Derive tri-state: never validated → Untested, validated ok → Valid, validated fail → Invalid
-            let status = if row.is_valid {
+            // Derive state: disabled first, then validation status
+            let status = if row.is_disabled {
+                ProxyStatus::Disabled
+            } else if row.is_valid {
                 ProxyStatus::Valid
             } else if row.last_validated.is_some() {
                 ProxyStatus::Invalid
@@ -120,6 +125,7 @@ impl ProxyPool {
                 local_port: row.local_port.map(|p| p as u16),
                 error_count: row.error_count as u32,
                 quality,
+                is_disabled: row.is_disabled,
             };
             self.proxies.insert(row.id, proxy);
         }
@@ -145,7 +151,7 @@ impl ProxyPool {
     pub fn get_valid_proxies(&self) -> Vec<PoolProxy> {
         self.proxies
             .iter()
-            .filter(|p| p.status == ProxyStatus::Valid)
+            .filter(|p| p.status == ProxyStatus::Valid && !p.is_disabled)
             .map(|p| p.value().clone())
             .collect()
     }
@@ -156,7 +162,7 @@ impl ProxyPool {
             match status {
                 ProxyStatus::Valid => proxy.error_count = 0,
                 ProxyStatus::Invalid => proxy.error_count += 1,
-                ProxyStatus::Untested => {}
+                ProxyStatus::Untested | ProxyStatus::Disabled => {}
             }
         }
     }
@@ -190,7 +196,19 @@ impl ProxyPool {
     }
 
     pub fn count_valid(&self) -> usize {
-        self.proxies.iter().filter(|p| p.status == ProxyStatus::Valid).count()
+        self.proxies.iter().filter(|p| p.status == ProxyStatus::Valid && !p.is_disabled).count()
+    }
+
+    pub fn set_disabled(&self, id: &str, disabled: bool) {
+        if let Some(mut proxy) = self.proxies.get_mut(id) {
+            proxy.is_disabled = disabled;
+            if disabled {
+                proxy.status = ProxyStatus::Disabled;
+            } else {
+                // Restore to Untested — will be re-validated
+                proxy.status = ProxyStatus::Untested;
+            }
+        }
     }
 
     pub fn remove_by_subscription(&self, sub_id: &str) {
@@ -222,7 +240,7 @@ impl ProxyPool {
         let candidates: Vec<PoolProxy> = self
             .proxies
             .iter()
-            .filter(|p| p.status == ProxyStatus::Valid && p.local_port.is_some())
+            .filter(|p| p.status == ProxyStatus::Valid && p.local_port.is_some() && !p.is_disabled)
             .filter(|p| {
                 if let Some(ref proxy_type) = filter.proxy_type {
                     p.proxy_type == *proxy_type
