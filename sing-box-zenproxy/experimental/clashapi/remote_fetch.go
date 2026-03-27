@@ -19,23 +19,25 @@ func fetchRouter(bm *BindingManager) http.Handler {
 }
 
 type remoteFetchRequest struct {
-	Server   string `json:"server"`
-	APIKey   string `json:"api_key"`
-	Count    int    `json:"count"`
-	Country  string `json:"country"`
-	ChatGPT  *bool  `json:"chatgpt"`
-	Type     string `json:"type"`
-	AutoBind bool   `json:"auto_bind"`
+	Server         string `json:"server"`
+	APIKey         string `json:"api_key"`
+	Count          int    `json:"count"`
+	Country        string `json:"country"`
+	ChatGPT        *bool  `json:"chatgpt"`
+	Type           string `json:"type"`
+	AutoBind       bool   `json:"auto_bind"`
+	SyncRemotePort *bool  `json:"sync_remote_port,omitempty"`
 }
 
 type serverProxy struct {
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Type     string          `json:"type"`
-	Server   string          `json:"server"`
-	Port     uint16          `json:"port"`
-	Outbound json.RawMessage `json:"outbound"`
-	Quality  json.RawMessage `json:"quality,omitempty"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Type      string          `json:"type"`
+	Server    string          `json:"server"`
+	Port      uint16          `json:"port"`
+	LocalPort *uint16         `json:"local_port,omitempty"`
+	Outbound  json.RawMessage `json:"outbound"`
+	Quality   json.RawMessage `json:"quality,omitempty"`
 }
 
 type serverFetchResponse struct {
@@ -113,10 +115,10 @@ func (bm *BindingManager) remoteFetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store proxies
+	// Store proxies (with remote port if available)
 	proxies := make([]StoredProxy, 0, len(serverResp.Proxies))
 	for _, sp := range serverResp.Proxies {
-		proxies = append(proxies, StoredProxy{
+		p := StoredProxy{
 			ID:       sp.ID,
 			Name:     sp.Name,
 			Type:     sp.Type,
@@ -124,19 +126,59 @@ func (bm *BindingManager) remoteFetch(w http.ResponseWriter, r *http.Request) {
 			Port:     sp.Port,
 			Outbound: sp.Outbound,
 			Source:   "server",
-		})
+		}
+		if sp.LocalPort != nil {
+			p.RemotePort = *sp.LocalPort
+		}
+		proxies = append(proxies, p)
 	}
 
 	added := bm.store.AddProxies(proxies)
 
+	// Determine sync mode: request param > env var > false
+	useSyncPort := bm.syncRemotePort
+	if req.SyncRemotePort != nil {
+		useSyncPort = *req.SyncRemotePort
+	}
+
 	// Auto-bind if requested
 	bindCount := 0
-	if req.AutoBind && bm.portPool != nil {
+	var syncErrors []map[string]string
+	if req.AutoBind {
 		for _, p := range added {
-			if _, err := bm.createBindingForProxy(p); err != nil {
-				bm.logger.Warn("auto-bind failed for ", p.Name, ": ", err)
+			if useSyncPort {
+				// Sync mode: use remote port, no fallback
+				if p.RemotePort == 0 {
+					syncErrors = append(syncErrors, map[string]string{
+						"proxy_id": p.ID,
+						"name":     p.Name,
+						"error":    "remote proxy has no local_port",
+					})
+					bm.logger.Warn("sync-port: proxy ", p.Name, " has no remote port, skipping")
+					continue
+				}
+				if _, err := bm.createBindingDirect(p, p.RemotePort); err != nil {
+					syncErrors = append(syncErrors, map[string]string{
+						"proxy_id":    p.ID,
+						"name":        p.Name,
+						"remote_port": fmt.Sprintf("%d", p.RemotePort),
+						"error":       err.Error(),
+					})
+					bm.logger.Warn("sync-port failed for ", p.Name, " port ", p.RemotePort, ": ", err)
+				} else {
+					bindCount++
+				}
 			} else {
-				bindCount++
+				// Normal mode: auto-allocate from PortPool
+				if bm.portPool == nil {
+					bm.logger.Warn("auto-bind failed for ", p.Name, ": port pool not initialized")
+					continue
+				}
+				if _, err := bm.createBindingForProxy(p); err != nil {
+					bm.logger.Warn("auto-bind failed for ", p.Name, ": ", err)
+				} else {
+					bindCount++
+				}
 			}
 		}
 	}
@@ -148,6 +190,9 @@ func (bm *BindingManager) remoteFetch(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.AutoBind {
 		result["bound"] = bindCount
+		if len(syncErrors) > 0 {
+			result["sync_errors"] = syncErrors
+		}
 	}
 	render.JSON(w, r, result)
 }

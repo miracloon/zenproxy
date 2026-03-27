@@ -18,13 +18,8 @@ pub struct AppConfig {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
-    pub admin_password: String,
-    #[serde(default = "default_min_trust_level")]
-    pub min_trust_level: i32,
     #[serde(default = "default_false")]
     pub allow_registration: bool,
-    #[serde(default = "default_true")]
-    pub enable_oauth: bool,
 }
 
 fn default_min_trust_level() -> i32 {
@@ -41,9 +36,18 @@ fn default_true() -> bool {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct OAuthConfig {
+    pub linuxdo: LinuxDoOAuthConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LinuxDoOAuthConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     pub client_id: String,
     pub client_secret: String,
     pub redirect_uri: String,
+    #[serde(default = "default_min_trust_level")]
+    pub min_trust_level: i32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -123,15 +127,14 @@ pub fn seed_settings_to_db(db: &Database, config: &AppConfig) -> Result<(), Box<
     let mut settings = std::collections::HashMap::new();
 
     // Server runtime settings
-    settings.insert("admin_password".to_string(), config.server.admin_password.clone());
-    settings.insert("min_trust_level".to_string(), config.server.min_trust_level.to_string());
     settings.insert("allow_registration".to_string(), config.server.allow_registration.to_string());
-    settings.insert("enable_oauth".to_string(), config.server.enable_oauth.to_string());
 
-    // OAuth settings
-    settings.insert("oauth_client_id".to_string(), config.oauth.client_id.clone());
-    settings.insert("oauth_client_secret".to_string(), config.oauth.client_secret.clone());
-    settings.insert("oauth_redirect_uri".to_string(), config.oauth.redirect_uri.clone());
+    // Linux.do OAuth settings (linuxdo-prefixed keys)
+    settings.insert("linuxdo_oauth_enabled".to_string(), config.oauth.linuxdo.enabled.to_string());
+    settings.insert("linuxdo_client_id".to_string(), config.oauth.linuxdo.client_id.clone());
+    settings.insert("linuxdo_client_secret".to_string(), config.oauth.linuxdo.client_secret.clone());
+    settings.insert("linuxdo_redirect_uri".to_string(), config.oauth.linuxdo.redirect_uri.clone());
+    settings.insert("linuxdo_min_trust_level".to_string(), config.oauth.linuxdo.min_trust_level.to_string());
 
     // Singbox runtime settings
     settings.insert("singbox_api_secret".to_string(), config.singbox.api_secret.clone().unwrap_or_default());
@@ -168,13 +171,12 @@ pub fn write_settings_to_config(
 
     for (key, value) in settings {
         match key.as_str() {
-            "admin_password" => doc["server"]["admin_password"] = toml_edit::value(value.as_str()),
-            "min_trust_level" => doc["server"]["min_trust_level"] = toml_edit::value(value.parse::<i64>().unwrap_or(1)),
             "allow_registration" => doc["server"]["allow_registration"] = toml_edit::value(value == "true"),
-            "enable_oauth" => doc["server"]["enable_oauth"] = toml_edit::value(value == "true"),
-            "oauth_client_id" => doc["oauth"]["client_id"] = toml_edit::value(value.as_str()),
-            "oauth_client_secret" => doc["oauth"]["client_secret"] = toml_edit::value(value.as_str()),
-            "oauth_redirect_uri" => doc["oauth"]["redirect_uri"] = toml_edit::value(value.as_str()),
+            "linuxdo_oauth_enabled" => doc["oauth"]["linuxdo"]["enabled"] = toml_edit::value(value == "true"),
+            "linuxdo_client_id" => doc["oauth"]["linuxdo"]["client_id"] = toml_edit::value(value.as_str()),
+            "linuxdo_client_secret" => doc["oauth"]["linuxdo"]["client_secret"] = toml_edit::value(value.as_str()),
+            "linuxdo_redirect_uri" => doc["oauth"]["linuxdo"]["redirect_uri"] = toml_edit::value(value.as_str()),
+            "linuxdo_min_trust_level" => doc["oauth"]["linuxdo"]["min_trust_level"] = toml_edit::value(value.parse::<i64>().unwrap_or(1)),
             "singbox_api_secret" => doc["singbox"]["api_secret"] = toml_edit::value(value.as_str()),
             "validation_url" => doc["validation"]["url"] = toml_edit::value(value.as_str()),
             "validation_timeout_secs" => doc["validation"]["timeout_secs"] = toml_edit::value(value.parse::<i64>().unwrap_or(10)),

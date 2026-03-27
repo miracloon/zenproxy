@@ -22,6 +22,36 @@ fn default_sub_type() -> String {
     "auto".to_string()
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateSubscriptionRequest {
+    pub name: Option<String>,
+    pub url: Option<String>,
+}
+
+pub async fn update_subscription(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateSubscriptionRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let sub = state.db.get_subscription(&id)?
+        .ok_or_else(|| AppError::NotFound("Subscription not found".into()))?;
+
+    let new_name = req.name.unwrap_or(sub.name);
+    let new_url = req.url.or(sub.url);
+
+    state.db.update_subscription(&id, &new_name, new_url.as_deref())?;
+
+    tracing::info!("Subscription '{}' updated (name='{}', url={:?})", id, new_name, new_url);
+    Ok(Json(json!({
+        "message": "Subscription updated",
+        "subscription": {
+            "id": id,
+            "name": new_name,
+            "url": new_url,
+        }
+    })))
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum SyncMode {
     Normal,
@@ -114,6 +144,7 @@ pub async fn add_subscription(
             last_validated: None,
             created_at: now.clone(),
             updated_at: now.clone(),
+            is_disabled: false,
         };
         state.db.insert_proxy(&proxy_row)?;
 
@@ -129,6 +160,7 @@ pub async fn add_subscription(
             local_port: None,
             error_count: 0,
             quality: None,
+            is_disabled: false,
         };
         state.pool.add(pool_proxy);
         added += 1;
@@ -253,6 +285,7 @@ pub async fn refresh_subscription_core(state: &Arc<AppState>, sub: &Subscription
                 last_validated: None,
                 created_at: now.clone(),
                 updated_at: now.clone(),
+                is_disabled: false,
             };
             state.db.insert_proxy(&proxy_row)
                 .map_err(|e| format!("Failed to insert proxy: {e}"))?;
@@ -269,6 +302,7 @@ pub async fn refresh_subscription_core(state: &Arc<AppState>, sub: &Subscription
                 local_port: None,
                 error_count: 0,
                 quality: None,
+                is_disabled: false,
             };
             state.pool.add(pool_proxy);
             added += 1;
@@ -358,6 +392,14 @@ pub async fn sync_proxy_bindings(state: &Arc<AppState>, mode: SyncMode) {
 
     let now = chrono::Utc::now();
     for p in all_proxies {
+        if p.is_disabled {
+            // Disabled proxies never get ports
+            if p.local_port.is_some() {
+                state.pool.clear_local_port(&p.id);
+                state.db.update_proxy_local_port_null(&p.id).ok();
+            }
+            continue;
+        }
         match p.status {
             ProxyStatus::Valid => {
                 if matches!(mode, SyncMode::QualityCheck) && needs_quality_check(&p, &now) {
@@ -369,7 +411,7 @@ pub async fn sync_proxy_bindings(state: &Arc<AppState>, mode: SyncMode) {
                 }
             }
             ProxyStatus::Untested => untested.push(p),
-            ProxyStatus::Invalid => invalid.push(p),
+            ProxyStatus::Invalid | ProxyStatus::Disabled => invalid.push(p),
         }
     }
 

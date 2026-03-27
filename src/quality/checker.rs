@@ -13,20 +13,20 @@ const MAX_INCOMPLETE_RETRIES: u8 = 2;
 const MAX_QUALITY_CHECKS_PER_RUN: usize = 40;
 
 /// ip-api.com rate limiter: max 40 requests/minute (free tier limit is 45).
-struct RateLimiter {
+pub(crate) struct RateLimiter {
     last_call: Mutex<Instant>,
     min_interval: std::time::Duration,
 }
 
 impl RateLimiter {
-    fn new(calls_per_minute: u32) -> Self {
+    pub(crate) fn new(calls_per_minute: u32) -> Self {
         RateLimiter {
             last_call: Mutex::new(Instant::now() - std::time::Duration::from_secs(60)),
             min_interval: std::time::Duration::from_millis(60_000 / calls_per_minute as u64),
         }
     }
 
-    async fn wait(&self) {
+    pub(crate) async fn wait(&self) {
         let mut last = self.last_call.lock().await;
         let elapsed = last.elapsed();
         if elapsed < self.min_interval {
@@ -51,7 +51,7 @@ pub async fn check_all(state: Arc<AppState>) -> Result<usize, String> {
             .pool
             .get_valid_proxies()
             .into_iter()
-            .filter(|p| p.local_port.is_some())
+            .filter(|p| p.local_port.is_some() && !p.is_disabled)
             .filter(|p| needs_quality_check(p, &now))
             .collect();
 
@@ -60,7 +60,7 @@ pub async fn check_all(state: Arc<AppState>) -> Result<usize, String> {
                 .pool
                 .get_valid_proxies()
                 .into_iter()
-                .filter(|p| p.local_port.is_none() && needs_quality_check(p, &now))
+                .filter(|p| p.local_port.is_none() && needs_quality_check(p, &now) && !p.is_disabled)
                 .count();
 
             if remaining_without_port > 0 {
@@ -78,7 +78,7 @@ pub async fn check_all(state: Arc<AppState>) -> Result<usize, String> {
                     .pool
                     .get_valid_proxies()
                     .into_iter()
-                    .filter(|p| p.local_port.is_some())
+                    .filter(|p| p.local_port.is_some() && !p.is_disabled)
                     .filter(|p| needs_quality_check(p, &now))
                     .collect();
             }
@@ -108,6 +108,42 @@ pub async fn check_all(state: Arc<AppState>) -> Result<usize, String> {
     }
 
     Ok(total_checked)
+}
+
+/// Run quality check on a single proxy by ID. The proxy must have an active binding.
+pub(crate) async fn check_single_proxy(state: &Arc<AppState>, proxy_id: &str) -> Result<(), String> {
+    let proxy = state.pool.get(proxy_id)
+        .ok_or_else(|| "Proxy not found".to_string())?;
+
+    if proxy.local_port.is_none() {
+        return Err("Proxy has no active binding".into());
+    }
+
+    let local_port = proxy.local_port.unwrap();
+    let proxy_addr = format!("http://127.0.0.1:{local_port}");
+    let rate_limiter = RateLimiter::new(40);
+
+    match check_single(&proxy_addr, &proxy, &rate_limiter).await {
+        Ok(quality) => {
+            let db_quality = ProxyQuality {
+                proxy_id: proxy.id.clone(),
+                ip_address: quality.ip_address.clone(),
+                country: quality.country.clone(),
+                ip_type: quality.ip_type.clone(),
+                is_residential: quality.is_residential,
+                chatgpt_accessible: quality.chatgpt_accessible,
+                google_accessible: quality.google_accessible,
+                risk_score: quality.risk_score,
+                risk_level: quality.risk_level.clone(),
+                extra_json: Some(serde_json::json!({"incomplete_retry_count": 0}).to_string()),
+                checked_at: chrono::Utc::now().to_rfc3339(),
+            };
+            state.db.upsert_quality(&db_quality).ok();
+            state.pool.set_quality(&proxy.id, quality);
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Check a batch of proxies concurrently, respecting rate limits.

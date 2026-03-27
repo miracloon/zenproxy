@@ -30,28 +30,32 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/auth/options", get(auth::auth_options))
         .route("/api/auth/register", post(auth::register));
 
-    // Admin routes — protected by admin password
+    // Admin routes — protected by session + role
     let admin_routes = Router::new()
-        .route("/api/admin/proxies", get(admin::list_proxies))
-        .route("/api/admin/proxies/:id", delete(admin::delete_proxy))
-        .route("/api/admin/proxies/cleanup", post(admin::cleanup_proxies))
-        .route("/api/admin/validate", post(admin::trigger_validation))
-        .route("/api/admin/quality-check", post(admin::trigger_quality_check))
-        .route("/api/admin/stats", get(admin::get_stats))
-        .route("/api/admin/users", get(admin::list_users))
-        .route("/api/admin/users/:id", delete(admin::delete_user))
-        .route("/api/admin/users/:id/ban", post(admin::ban_user))
-        .route("/api/admin/users/:id/unban", post(admin::unban_user))
-        .route("/api/admin/users/create", post(admin::create_password_user))
-        .route("/api/admin/users/:id/password", put(admin::reset_user_password))
-        .route("/api/admin/settings", get(admin::get_settings).put(admin::update_settings))
+        .route("/api/admin/proxies", get(admin::proxies::list_proxies))
+        .route("/api/admin/proxies/:id", delete(admin::proxies::delete_proxy))
+        .route("/api/admin/proxies/:id/toggle", post(admin::proxies::toggle_proxy))
+        .route("/api/admin/proxies/:id/validate", post(admin::proxies::validate_single_proxy))
+        .route("/api/admin/proxies/:id/quality", post(admin::proxies::quality_check_single_proxy))
+        .route("/api/admin/proxies/cleanup", post(admin::proxies::cleanup_proxies))
+        .route("/api/admin/validate", post(admin::proxies::trigger_validation))
+        .route("/api/admin/quality-check", post(admin::proxies::trigger_quality_check))
+        .route("/api/admin/stats", get(admin::settings::get_stats))
+        .route("/api/admin/users", get(admin::users::list_users))
+        .route("/api/admin/users/:id", delete(admin::users::delete_user))
+        .route("/api/admin/users/:id/ban", post(admin::users::ban_user))
+        .route("/api/admin/users/:id/unban", post(admin::users::unban_user))
+        .route("/api/admin/users/create", post(admin::users::create_password_user))
+        .route("/api/admin/users/:id/password", put(admin::users::reset_user_password))
+        .route("/api/admin/users/:id/role", put(admin::users::change_user_role))
+        .route("/api/admin/settings", get(admin::settings::get_settings).put(admin::settings::update_settings))
         .route(
             "/api/subscriptions",
             get(subscription::list_subscriptions).post(subscription::add_subscription),
         )
         .route(
             "/api/subscriptions/:id",
-            delete(subscription::delete_subscription),
+            delete(subscription::delete_subscription).put(subscription::update_subscription),
         )
         .route(
             "/api/subscriptions/:id/refresh",
@@ -88,28 +92,22 @@ pub fn router(state: Arc<AppState>) -> Router {
 
 async fn admin_auth(
     State(state): State<Arc<AppState>>,
-    request: Request<axum::body::Body>,
+    mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Read admin_password from DB settings (runtime), fallback to config
-    let expected = state.db.get_setting("admin_password")
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| state.config.server.admin_password.clone());
+    // Session-based admin auth: require valid session with admin or super_admin role
+    let headers = request.headers().clone();
+    let user = auth::extract_session_user(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-    let authorized = request
-        .headers()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(|token| token == expected)
-        .unwrap_or(false);
-
-    if authorized {
-        Ok(next.run(request).await)
-    } else {
-        Err(StatusCode::UNAUTHORIZED)
+    if user.role == "user" {
+        return Err(StatusCode::FORBIDDEN);
     }
+
+    // Inject user into request extensions for downstream handlers
+    request.extensions_mut().insert(user);
+    Ok(next.run(request).await)
 }
 
 async fn user_page() -> axum::response::Html<&'static str> {

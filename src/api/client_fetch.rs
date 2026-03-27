@@ -67,6 +67,7 @@ fn client_proxy_to_json(p: &crate::pool::manager::PoolProxy) -> serde_json::Valu
         "server": p.server,
         "port": p.port,
         "outbound": p.singbox_outbound,
+        "local_port": p.local_port,
         "quality": p.quality.as_ref().map(|q| json!({
             "country": q.country,
             "chatgpt": q.chatgpt_accessible,

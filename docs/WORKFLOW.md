@@ -13,14 +13,20 @@ GitHub Actions 编译（amd64 + arm64）→ 推送镜像到 DockerHub →
 VPS / 本地拉取镜像 → 配置 → 导入订阅源 → 开始使用
 ```
 
-运行态下：
+运行态下（VPS）：
 
 ```
-订阅源 / 手动导入 → ZenProxy Server（代理池管理、验证、质检）
-                         ↓ Fetch API
-                   sing-box-zenproxy（本地端口绑定）
+订阅源 / 手动导入 → ZenProxy Server（代理池管理、验证、质检、端口绑定）
                          ↓
-                   下游程序使用 127.0.0.1:(60001-65535) 各端口
+                   下游程序使用 127.0.0.1:(Server 代理池端口) 各端口
+```
+
+运行态下（本地 Fetch）：
+
+```
+ZenProxy Server（VPS）→ Fetch API → sing-box-zenproxy（本地端口绑定）
+                                          ↓
+                                    下游程序使用 127.0.0.1:(Client 代理池端口) 各端口
 ```
 
 ---
@@ -62,8 +68,8 @@ VPS / 本地拉取镜像 → 配置 → 导入订阅源 → 开始使用
 
 ### 部署运行
 
-- **VPS 部署**：使用 Docker Compose 同时运行 server 容器和 client 容器。配置文件和数据目录通过 volume mount 挂载。
-- **本地部署**：仅运行 client 容器。
+- **VPS 部署**：仅运行 server 容器（`network_mode: host`）。Server 内嵌 sing-box，自动为有效代理创建端口绑定。配置文件和数据目录通过 volume mount 挂载。
+- **本地部署**：仅运行 client 容器（`network_mode: host`）。从远程 Server Fetch 代理后在本地创建端口绑定。
 - **数据持久化**：
   - Server：`data/zenproxy.db`（SQLite 数据库）通过 volume 持久化
   - Client：`data/store.json`（代理存储）通过 volume 持久化
@@ -71,13 +77,17 @@ VPS / 本地拉取镜像 → 配置 → 导入订阅源 → 开始使用
 
 ### 使用态（运行时）
 
-项目运行后，典型使用流程为：
+**VPS 场景**：
 
 1. 通过 Server Web 管理后台或 API 添加订阅源
-2. Server 自动拉取、解析、验证代理
-3. Client 通过 Fetch API 从 Server 拉取代理信息（或本地直接导入订阅）
-4. Client 批量创建端口绑定
-5. 下游程序使用 `127.0.0.1:(60001-65535)` 各端口作为代理
+2. Server 自动拉取、解析、验证代理并创建端口绑定
+3. VPS 上的下游程序使用 `127.0.0.1:(Server 代理池端口)` 各端口作为代理
+
+**本地 Fetch 场景**：
+
+1. Client 通过 Fetch API 从远程 Server 拉取代理信息
+2. Client 批量创建端口绑定
+3. 本地下游程序使用 `127.0.0.1:(Client 代理池端口)` 各端口作为代理
 
 ---
 

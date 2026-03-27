@@ -20,7 +20,7 @@ pub async fn validate_all(state: Arc<AppState>) -> Result<(), String> {
         .pool
         .get_all()
         .iter()
-        .filter(|p| p.status == ProxyStatus::Valid && p.error_count > 0)
+        .filter(|p| p.status == ProxyStatus::Valid && p.error_count > 0 && !p.is_disabled)
         .map(|p| p.id.clone())
         .collect();
     if !recheck.is_empty() {
@@ -56,7 +56,7 @@ pub async fn validate_all(state: Arc<AppState>) -> Result<(), String> {
             .pool
             .get_all()
             .into_iter()
-            .filter(|p| p.local_port.is_some() && p.status == ProxyStatus::Untested)
+            .filter(|p| p.local_port.is_some() && p.status == ProxyStatus::Untested && !p.is_disabled)
             .collect();
 
         if to_validate.is_empty() {
@@ -66,7 +66,7 @@ pub async fn validate_all(state: Arc<AppState>) -> Result<(), String> {
                 .pool
                 .get_all()
                 .into_iter()
-                .filter(|p| p.status == ProxyStatus::Untested)
+                .filter(|p| p.status == ProxyStatus::Untested && !p.is_disabled)
                 .collect();
             for p in &stuck {
                 tracing::warn!("Proxy {} failed to get binding, marking invalid", p.name);
