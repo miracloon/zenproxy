@@ -38,6 +38,18 @@ impl PortPool {
         None
     }
 
+    fn allocate_specific(&mut self, port: u16) -> Result<(), String> {
+        if port <= self.base_port || port > self.base_port + self.max_ports {
+            return Err(format!("port {} out of range ({}-{})",
+                port, self.base_port + 1, self.base_port + self.max_ports));
+        }
+        if self.used.contains(&port) {
+            return Err(format!("port {} already allocated", port));
+        }
+        self.used.insert(port);
+        Ok(())
+    }
+
     fn free(&mut self, port: u16) {
         self.used.remove(&port);
     }
@@ -144,6 +156,37 @@ impl SingboxManager {
         }
     }
 
+    /// POST a binding to the sing-box Clash API.
+    async fn post_binding(
+        &self,
+        proxy_id: &str,
+        port: u16,
+        outbound_json: &serde_json::Value,
+    ) -> Result<(), String> {
+        let url = format!("{}/bindings", self.api_base);
+        let secret = self.config.api_secret.clone().unwrap_or_default();
+        let payload = serde_json::json!({
+            "tag": proxy_id,
+            "listen_port": port,
+            "outbound": outbound_json,
+        });
+        let result = self.client
+            .post(&url)
+            .bearer_auth(&secret)
+            .json(&payload)
+            .send()
+            .await;
+        match result {
+            Ok(resp) if resp.status().is_success() => Ok(()),
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                Err(format!("Bindings API returned {status} for {proxy_id}: {body}"))
+            }
+            Err(e) => Err(format!("Bindings API request failed for {proxy_id}: {e}")),
+        }
+    }
+
     /// Create a binding: allocate a port and POST to the bindings API.
     /// Returns the allocated local port on success.
     pub async fn create_binding(
@@ -155,42 +198,41 @@ impl SingboxManager {
             .port_pool
             .allocate()
             .ok_or_else(|| "No available ports in pool".to_string())?;
-
-        let url = format!("{}/bindings", self.api_base);
-        let secret = self.config.api_secret.clone().unwrap_or_default();
-
-        let payload = serde_json::json!({
-            "tag": proxy_id,
-            "listen_port": port,
-            "outbound": outbound_json,
-        });
-
-        let result = self
-            .client
-            .post(&url)
-            .bearer_auth(&secret)
-            .json(&payload)
-            .send()
-            .await;
-
-        match result {
-            Ok(resp) if resp.status().is_success() => {
+        match self.post_binding(proxy_id, port, outbound_json).await {
+            Ok(()) => {
                 tracing::debug!("Created binding {proxy_id} on port {port}");
                 Ok(port)
             }
-            Ok(resp) => {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-                self.port_pool.free(port);
-                Err(format!(
-                    "Bindings API returned {status} for {proxy_id}: {body}"
-                ))
-            }
             Err(e) => {
                 self.port_pool.free(port);
-                Err(format!("Bindings API request failed for {proxy_id}: {e}"))
+                Err(e)
             }
         }
+    }
+
+    /// Create a binding on a specific port (for restoring saved port assignments).
+    /// Falls back to sequential allocation if the specific port fails.
+    pub async fn create_binding_on_port(
+        &mut self,
+        proxy_id: &str,
+        port: u16,
+        outbound_json: &serde_json::Value,
+    ) -> Result<u16, String> {
+        if self.port_pool.allocate_specific(port).is_ok() {
+            match self.post_binding(proxy_id, port, outbound_json).await {
+                Ok(()) => {
+                    tracing::debug!("Restored binding {proxy_id} on port {port}");
+                    return Ok(port);
+                }
+                Err(e) => {
+                    self.port_pool.free(port);
+                    tracing::warn!("Failed to restore port {port} for {proxy_id}: {e}, falling back");
+                }
+            }
+        } else {
+            tracing::warn!("Cannot restore port {port} for {proxy_id} (out of range or occupied), falling back");
+        }
+        self.create_binding(proxy_id, outbound_json).await
     }
 
     /// Remove a binding: DELETE from the API and free the port.
