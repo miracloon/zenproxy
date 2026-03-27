@@ -22,6 +22,36 @@ fn default_sub_type() -> String {
     "auto".to_string()
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateSubscriptionRequest {
+    pub name: Option<String>,
+    pub url: Option<String>,
+}
+
+pub async fn update_subscription(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateSubscriptionRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let sub = state.db.get_subscription(&id)?
+        .ok_or_else(|| AppError::NotFound("Subscription not found".into()))?;
+
+    let new_name = req.name.unwrap_or(sub.name);
+    let new_url = req.url.or(sub.url);
+
+    state.db.update_subscription(&id, &new_name, new_url.as_deref())?;
+
+    tracing::info!("Subscription '{}' updated (name='{}', url={:?})", id, new_name, new_url);
+    Ok(Json(json!({
+        "message": "Subscription updated",
+        "subscription": {
+            "id": id,
+            "name": new_name,
+            "url": new_url,
+        }
+    })))
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum SyncMode {
     Normal,

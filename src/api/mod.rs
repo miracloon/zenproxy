@@ -52,7 +52,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route(
             "/api/subscriptions/:id",
-            delete(subscription::delete_subscription),
+            delete(subscription::delete_subscription).put(subscription::update_subscription),
         )
         .route(
             "/api/subscriptions/:id/refresh",
