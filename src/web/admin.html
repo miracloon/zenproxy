@@ -35,11 +35,17 @@ body { font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var
 .btn-success { background:var(--success); color:#fff; }
 .btn-success:hover { opacity:.85; }
 .btn-sm { padding:6px 12px; font-size:12px; }
-.btn-xs { padding:4px 8px; font-size:11px; border-radius:4px; border:1px solid var(--border); background:var(--card); color:var(--text); cursor:pointer;}
+.btn-xs { padding:4px 8px; font-size:11px; border-radius:4px; border:1px solid var(--border); background:var(--card); color:var(--text); cursor:pointer; white-space:nowrap;}
 .btn-xs:hover { border-color:var(--primary); }
 .btn-xs.btn-success { background:var(--success); color:#fff; border-color:var(--success);}
 .btn-xs.btn-warning { background:var(--warn); color:#fff; border-color:var(--warn);}
 .btn-xs.btn-danger { background:var(--danger); color:#fff; border-color:var(--danger);}
+.btn-xs.btn-info { background:#3b82f6; color:#fff; border-color:#3b82f6;}
+.btn-xs.btn-info:hover { opacity:.85; }
+.btn-xs:disabled { opacity:.4; cursor:default; pointer-events:none; }
+.actions-cell { display:flex; gap:4px; flex-wrap:wrap; }
+.spinner-xs { display:inline-block; width:12px; height:12px; border:2px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; margin-right:4px; }
+@keyframes spin { to { transform:rotate(360deg); } }
 .btn-group { display:flex; gap:8px; flex-wrap:wrap; }
 table { width:100%; border-collapse:collapse; }
 th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); font-size:13px; white-space:nowrap; }
@@ -543,9 +549,10 @@ function renderProxies() {
     
     const statusBadge = p.is_disabled ? '<span class="badge badge-disabled">已禁用</span>' :
         (p.status==='valid'?'<span class="badge badge-valid">有效</span>':p.status==='untested'?'<span class="badge badge-untested">待检测</span>':'<span class="badge badge-invalid">无效</span>');
+    const isChecking = pendingActions[p.id];
     const toggleBtn = p.is_disabled ? `<button class="btn-xs btn-success" onclick="toggleProxy('${esc(p.id)}')">启用</button>` : `<button class="btn-xs btn-warning" onclick="toggleProxy('${esc(p.id)}')">禁用</button>`;
-    const validateBtn = !p.is_disabled ? `<button class="btn-xs" onclick="validateSingle('${esc(p.id)}')">验证</button>` : '';
-    const qualityBtn = !p.is_disabled && p.status === 'valid' ? `<button class="btn-xs" onclick="qualitySingle('${esc(p.id)}')">质检</button>` : '';
+    const connectBtn = !p.is_disabled ? (isChecking==='validate' ? `<button class="btn-xs btn-info" disabled><span class="spinner-xs"></span>检测中</button>` : `<button class="btn-xs btn-info" onclick="validateSingle('${esc(p.id)}')">连通测试</button>`) : '';
+    const qualityBtn = !p.is_disabled && p.status === 'valid' ? (isChecking==='quality' ? `<button class="btn-xs" disabled><span class="spinner-xs"></span>质检中</button>` : `<button class="btn-xs" onclick="qualitySingle('${esc(p.id)}')">质量检测</button>`) : '';
 
     return `<tr class="${p.is_disabled ? 'row-disabled' : ''}">
       <td title="${esc(p.name)}" style="max-width:150px;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</td>
@@ -559,10 +566,10 @@ function renderProxies() {
       <td>${q?(q.chatgpt?yes:no):na}</td>
       <td>${q?(q.google?yes:no):na}</td>
       <td>${q?(q.is_residential?yes:no):na}</td>
-      <td class="actions">
-          ${toggleBtn} ${validateBtn} ${qualityBtn}
+      <td><div class="actions-cell">
+          ${toggleBtn} ${connectBtn} ${qualityBtn}
           <button class="btn-xs btn-danger" onclick="deleteProxy('${p.id}')">删除</button>
-      </td>
+      </div></td>
     </tr>`;
   }).join('');
   renderPagination(filtered.length, totalPages);
@@ -592,9 +599,41 @@ function renderPagination(total, totalPages) {
 function goPage(page) { currentPage = page; renderProxies(); }
 function sortBy(field) { if(sortField===field) sortDir = sortDir==='asc'?'desc':'asc'; else { sortField=field; sortDir='asc'; } renderProxies(); }
 
+let pendingActions = {}; // { proxyId: 'validate' | 'quality' }
+
 async function toggleProxy(id) { await api('/api/admin/proxies/'+id+'/toggle', { method: 'POST' }); loadProxies(); }
-async function validateSingle(id) { await api('/api/admin/proxies/'+id+'/validate', { method: 'POST' }); toast('验证已启动'); setTimeout(loadProxies,3000);}
-async function qualitySingle(id) { await api('/api/admin/proxies/'+id+'/quality', { method: 'POST' }); toast('质量检测已启动'); setTimeout(loadProxies,5000);}
+async function validateSingle(id) {
+  pendingActions[id] = 'validate'; renderProxies();
+  await api('/api/admin/proxies/'+id+'/validate', { method: 'POST' });
+  toast('连通测试已启动');
+  pollProxyResult(id, 'validate', 3000, 5);
+}
+async function qualitySingle(id) {
+  pendingActions[id] = 'quality'; renderProxies();
+  await api('/api/admin/proxies/'+id+'/quality', { method: 'POST' });
+  toast('质量检测已启动');
+  pollProxyResult(id, 'quality', 4000, 8);
+}
+async function pollProxyResult(id, type, interval, maxTries) {
+  let tries = 0;
+  const timer = setInterval(async () => {
+    tries++;
+    const d = await api('/api/admin/proxies');
+    if(d) { allProxies = d.proxies||[]; }
+    const p = allProxies.find(x => x.id === id);
+    const done = (type === 'validate')
+      ? (p && p.status !== 'untested')
+      : (p && p.quality);
+    if(done || tries >= maxTries) {
+      delete pendingActions[id];
+      clearInterval(timer);
+      if(done) toast(type==='validate' ? '连通测试完成' : '质量检测完成');
+      else toast('检测超时，请手动刷新', 'error');
+    }
+    updateLocalQualityStats();
+    renderProxies();
+  }, interval);
+}
 async function deleteProxy(id) { if(confirm('确定删除该代理？')) { await api('/api/admin/proxies/'+id, {method:'DELETE'}); toast('已删除'); loadProxies(); } }
 
 async function triggerValidation() { toast('正在启动验证...'); await api('/api/admin/validate', {method:'POST'}); }
@@ -700,8 +739,11 @@ async function loadUsers() {
            </select>`
         : `<span class="badge ${u.role === 'super_admin'?'badge-danger':u.role==='admin'?'badge-warn':'badge-valid'}">${roleText(u.role)}</span>`;
 
-    const banBtn = u.is_banned ? `<button class="btn-xs btn-success" onclick="unbanUser('${esc(u.id)}')">解封</button>` : `<button class="btn-xs btn-warning" onclick="banUser('${esc(u.id)}')">封禁</button>`;
+    const isSelf = u.id === currentUser.id;
+    const banBtn = isSelf ? '' : (u.is_banned ? `<button class="btn-xs btn-success" onclick="unbanUser('${esc(u.id)}')">解封</button>` : `<button class="btn-xs btn-warning" onclick="banUser('${esc(u.id)}')">封禁</button>`);
     const deleteBtn = canDelete(u) ? `<button class="btn-xs btn-danger" onclick="deleteUser('${esc(u.id)}')">删除</button>` : '';
+    const renameBtn = `<button class="btn-xs" onclick="promptRename('${esc(u.id)}', '${esc(u.username)}')">改名</button>`;
+    const pwdBtn = (u.auth_source === 'password') ? `<button class="btn-xs" onclick="promptResetPassword('${esc(u.id)}', '${esc(u.username)}')">重置密码</button>` : '';
     
     return `<tr>
       <td>${esc(u.id.substring(0,8))}..</td>
@@ -710,10 +752,9 @@ async function loadUsers() {
       <td>${u.auth_source==='password'?'<span class="badge badge-type">密码</span>':'<span class="badge badge-valid">OAuth</span>'}</td>
       <td>${u.is_banned?'<span class="badge badge-banned">已封禁</span>':'<span class="badge badge-active">正常</span>'}</td>
       <td>${new Date(u.created_at).toLocaleString()}</td>
-      <td class="btn-group">
-        ${banBtn}
-        ${deleteBtn}
-      </td>
+      <td><div class="actions-cell">
+        ${renameBtn} ${pwdBtn} ${banBtn} ${deleteBtn}
+      </div></td>
     </tr>`;
   }).join('');
 }
@@ -738,8 +779,24 @@ async function changeRole(id, role) {
     loadUsers();
 }
 async function deleteUser(id) { if(confirm('确定删除该用户？该操作不可撤销。')) { await api('/api/admin/users/'+id, {method:'DELETE'}); toast('已删除'); loadUsers(); } }
-async function banUser(id) { if(confirm('确定封禁该用户？用户将被强制下线。')) { await api('/api/admin/users/'+id+'/ban', {method:'POST'}); toast('已封禁'); loadUsers(); } }
+async function banUser(id) { if(confirm('确定封禁该用户？用户将被强制下线。')) { const d = await api('/api/admin/users/'+id+'/ban', {method:'POST'}); if(d && d.error) toast(d.error, 'error'); else toast('已封禁'); loadUsers(); } }
 async function unbanUser(id) { await api('/api/admin/users/'+id+'/unban', {method:'POST'}); toast('已解封'); loadUsers(); }
+
+async function promptRename(id, oldName) {
+  const newName = prompt('请输入新用户名:', oldName);
+  if(!newName || newName.trim() === oldName) return;
+  const d = await api('/api/admin/users/'+id+'/username', { method:'PUT', body: JSON.stringify({ username: newName.trim() }) });
+  if(d && d.error) toast(d.error, 'error');
+  else { toast('用户名已更新'); loadUsers(); }
+}
+
+async function promptResetPassword(id, username) {
+  const newPwd = prompt(`为 "${username}" 设置新密码 (至少6位):`);
+  if(!newPwd || newPwd.length < 6) { if(newPwd !== null) toast('密码至少6位', 'error'); return; }
+  const d = await api('/api/admin/users/'+id+'/password', { method:'PUT', body: JSON.stringify({ password: newPwd }) });
+  if(d && d.error) toast(d.error, 'error');
+  else toast('密码已重置');
+}
 
 async function createPasswordUser() {
   const username = document.getElementById('new-user-username').value.trim();

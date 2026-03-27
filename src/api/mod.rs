@@ -48,6 +48,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/admin/users/create", post(admin::users::create_password_user))
         .route("/api/admin/users/:id/password", put(admin::users::reset_user_password))
         .route("/api/admin/users/:id/role", put(admin::users::change_user_role))
+        .route("/api/admin/users/:id/username", put(admin::users::update_username))
         .route("/api/admin/settings", get(admin::settings::get_settings).put(admin::settings::update_settings))
         .route(
             "/api/subscriptions",

@@ -1,6 +1,6 @@
 [server]
 host = "0.0.0.0"
-port = 3000
+port = 60000
 allow_registration = false
 
 [oauth.linuxdo]
@@ -13,9 +13,9 @@ min_trust_level = 1
 [singbox]
 binary_path = "/app/sing-box"
 config_path = "data/singbox-config.json"
-base_port = 10001
+base_port = 60001
 max_proxies = 300
-api_port = 9090
+api_port = 59090
 api_secret = ""
 
 [database]

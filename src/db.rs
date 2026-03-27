@@ -777,6 +777,16 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_user_username(&self, user_id: &str, username: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE users SET username = ?1, updated_at = ?2 WHERE id = ?3",
+            params![username, now, user_id],
+        )?;
+        Ok(())
+    }
+
     pub fn update_user_role(&self, id: &str, role: &str) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();

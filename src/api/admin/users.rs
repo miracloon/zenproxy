@@ -57,10 +57,17 @@ pub async fn delete_user(
 }
 
 pub async fn ban_user(
+    current_user: super::CurrentUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    // Cannot ban yourself
+    if current_user.id == id {
+        return Err(AppError::BadRequest("Cannot ban your own account".into()));
+    }
     state.db.set_user_banned(&id, true)?;
+    // Invalidate auth cache so banned user is forced out
+    state.auth_cache.retain(|_, (u, _)| u.id != id);
     Ok(Json(json!({ "message": "User banned" })))
 }
 
@@ -138,6 +145,34 @@ pub async fn reset_user_password(
     state.db.update_user_password(&id, &hash)?;
 
     Ok(Json(json!({ "message": "Password updated" })))
+}
+
+// --- Username Management ---
+
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateUsernameRequest {
+    pub username: String,
+}
+
+pub async fn update_username(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateUsernameRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let new_name = req.username.trim().to_string();
+    if new_name.is_empty() || new_name.len() < 2 {
+        return Err(AppError::BadRequest("Username must be at least 2 characters".into()));
+    }
+    // Check uniqueness
+    if let Some(existing) = state.db.get_user_by_username(&new_name)? {
+        if existing.id != id {
+            return Err(AppError::BadRequest("Username already taken".into()));
+        }
+    }
+    state.db.update_user_username(&id, &new_name)?;
+    // Invalidate auth cache so name refreshes
+    state.auth_cache.retain(|_, (u, _)| u.id != id);
+    Ok(Json(json!({ "message": "Username updated" })))
 }
 
 // --- Role Management ---
