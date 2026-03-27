@@ -15,13 +15,14 @@ body { font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var
 .container { max-width:1400px; margin:0 auto; padding:24px; }
 .section { margin-bottom:32px; }
 .section-title { font-size:16px; font-weight:600; color:var(--text-bright); margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; }
-.card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; overflow-x:auto; }
+.card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; overflow-x:auto; margin-bottom:24px;}
 .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
 @media(max-width:768px) { .grid-2 { grid-template-columns:1fr; } }
 .form-group { margin-bottom:14px; }
 .form-group label { display:block; font-size:13px; color:var(--text-dim); margin-bottom:6px; }
 .form-group input, .form-group select, .form-group textarea { width:100%; padding:10px 12px; background:#0f1117; border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; outline:none; transition:border .2s; }
 .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color:var(--primary); }
+.form-group input[type="checkbox"] { width: auto; display: inline-block; vertical-align: middle; margin-right: 8px;}
 .form-group textarea { resize:vertical; min-height:80px; }
 .btn { padding:10px 20px; border:none; border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; transition:all .2s; display:inline-flex; align-items:center; gap:6px; }
 .btn-primary { background:var(--primary); color:#fff; }
@@ -30,9 +31,15 @@ body { font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var
 .btn-danger:hover { opacity:.85; }
 .btn-warn { background:var(--warn); color:#000; }
 .btn-warn:hover { opacity:.85; }
+.btn-warning { background:var(--warn); color:#fff; }
 .btn-success { background:var(--success); color:#fff; }
 .btn-success:hover { opacity:.85; }
 .btn-sm { padding:6px 12px; font-size:12px; }
+.btn-xs { padding:4px 8px; font-size:11px; border-radius:4px; border:1px solid var(--border); background:var(--card); color:var(--text); cursor:pointer;}
+.btn-xs:hover { border-color:var(--primary); }
+.btn-xs.btn-success { background:var(--success); color:#fff; border-color:var(--success);}
+.btn-xs.btn-warning { background:var(--warn); color:#fff; border-color:var(--warn);}
+.btn-xs.btn-danger { background:var(--danger); color:#fff; border-color:var(--danger);}
 .btn-group { display:flex; gap:8px; flex-wrap:wrap; }
 table { width:100%; border-collapse:collapse; }
 th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); font-size:13px; white-space:nowrap; }
@@ -45,6 +52,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
 .badge-valid { background:rgba(34,197,94,.15); color:var(--success); }
 .badge-invalid { background:rgba(239,68,68,.15); color:var(--danger); }
 .badge-untested { background:rgba(245,158,11,.15); color:var(--warn); }
+.badge-disabled { background:#374151; color:#9ca3af; }
 .badge-type { background:rgba(108,99,255,.15); color:var(--primary); }
 .badge-quality { background:rgba(245,158,11,.15); color:var(--warn); }
 .badge-risk-low { background:rgba(34,197,94,.15); color:var(--success); }
@@ -64,15 +72,6 @@ tr:hover td { background:rgba(108,99,255,.03); }
 .empty { text-align:center; color:var(--text-dim); padding:40px; }
 .type-chips { display:flex; gap:8px; flex-wrap:wrap; }
 .type-chip { padding:4px 10px; border-radius:6px; font-size:12px; background:rgba(108,99,255,.1); color:var(--primary); }
-/* Login overlay */
-.login-overlay { position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:1000; }
-.login-box { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:40px; width:360px; text-align:center; }
-.login-box h2 { font-size:22px; color:var(--text-bright); margin-bottom:8px; }
-.login-box p { font-size:13px; color:var(--text-dim); margin-bottom:24px; }
-.login-box input { width:100%; padding:12px 16px; background:#0f1117; border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; outline:none; margin-bottom:16px; }
-.login-box input:focus { border-color:var(--primary); }
-.login-box .btn { width:100%; justify-content:center; }
-.login-error { color:var(--danger); font-size:13px; margin-bottom:12px; display:none; }
 .api-key-cell { max-width:120px; overflow:hidden; text-overflow:ellipsis; font-family:'Consolas','Courier New',monospace; font-size:11px; }
 .pagination { display:flex; align-items:center; justify-content:center; gap:4px; padding:16px 0 0; flex-wrap:wrap; }
 .pagination button { background:transparent; border:1px solid var(--border); color:var(--text-dim); border-radius:6px; padding:6px 12px; font-size:13px; cursor:pointer; transition:all .2s; }
@@ -80,356 +79,315 @@ tr:hover td { background:rgba(108,99,255,.03); }
 .pagination button.active { background:var(--primary); border-color:var(--primary); color:#fff; }
 .pagination button:disabled { opacity:.4; cursor:default; }
 .pagination .page-info { font-size:13px; color:var(--text-dim); margin:0 8px; }
+
+/* Tabs */
+.tab-bar { display: flex; gap: 4px; padding: 16px 20px; border-bottom: 1px solid var(--border); margin-bottom:20px; flex-wrap: wrap;}
+.tab { background: transparent; border: none; color: var(--text-secondary); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; transition: all 0.2s; color: var(--text-dim);}
+.tab.active { background: var(--primary); color: #fff; }
+.tab:hover:not(.active) { background: var(--bg); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.tab-link { margin-left: auto; color: var(--text-dim); text-decoration: none; padding: 8px 16px; transition: color 0.2s;}
+.tab-link:hover { color: var(--text); }
+
+/* specific */
+.settings-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:24px; }
+.settings-card h3 { font-size:16px; color:var(--text-bright); margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border); }
+.row-disabled { opacity: 0.5; }
+.input-sm { padding:4px 8px; font-size:12px; border-radius:4px; background:#0f1117; border:1px solid var(--border); color:var(--text); width: 100%; outline:none;}
+.input-sm:focus { border-color:var(--primary); }
+.url-cell { max-width:200px; overflow:hidden; text-overflow:ellipsis; }
+
+/* Admin access denied */
+.access-denied { text-align: center; padding: 100px 20px; }
+.access-denied h2 { font-size: 24px; color: var(--danger); margin-bottom: 16px; }
+.access-denied p { color: var(--text-dim); margin-bottom: 24px; }
+.access-denied a { color: var(--primary); text-decoration: none; }
+.access-denied a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
 
-<!-- Login Screen -->
-<div class="login-overlay" id="login-overlay">
-  <div class="login-box">
-    <h2>ZenProxy 管理后台</h2>
-    <p>请输入管理员密码以继续</p>
-    <div class="login-error" id="login-error">密码错误，请重试</div>
-    <input type="password" id="login-password" placeholder="输入密码..." onkeydown="if(event.key==='Enter')doLogin()">
-    <button class="btn btn-primary" onclick="doLogin()">登录</button>
-  </div>
-</div>
-
-<!-- Main App -->
 <div id="app" style="display:none">
 <div class="header">
   <h1>ZenProxy 管理后台</h1>
   <div class="nav">
-    <a href="/">仪表盘</a>
-    <a href="/admin" class="active">管理后台</a>
-    <a href="/docs">API 文档</a>
-    <a href="javascript:void(0)" onclick="doLogout()" style="color:var(--danger)">退出登录</a>
+    <a href="javascript:void(0)" onclick="logout()" style="color:var(--text-dim)">退出登录</a>
   </div>
 </div>
 
+<div class="tab-bar">
+    <button class="tab active" data-tab="subscriptions" onclick="switchTab('subscriptions')">
+        📡 订阅与节点管理
+    </button>
+    <button class="tab" data-tab="users" onclick="switchTab('users')">
+        👥 用户管理
+    </button>
+    <button class="tab" data-tab="settings" onclick="switchTab('settings')">
+        ⚙️ 系统设置
+    </button>
+    <a href="/" class="tab-link">← 返回仪表盘</a>
+</div>
+
 <div class="container">
-  <!-- Stats -->
-  <div class="stat-grid" id="stats">
-    <div class="stat-card"><div class="stat-value" id="s-total">-</div><div class="stat-label">总代理数</div></div>
-    <div class="stat-card"><div class="stat-value" id="s-valid">-</div><div class="stat-label">有效</div></div>
-    <div class="stat-card"><div class="stat-value" id="s-invalid">-</div><div class="stat-label">无效</div></div>
-    <div class="stat-card"><div class="stat-value" id="s-untested">-</div><div class="stat-label">待检测</div></div>
-    <div class="stat-card"><div class="stat-value" id="s-subs">-</div><div class="stat-label">订阅源</div></div>
-    <div class="stat-card"><div class="stat-value" id="s-quality">-</div><div class="stat-label">已质检</div></div>
-    <div class="stat-card"><div class="stat-value" id="s-chatgpt">-</div><div class="stat-label">ChatGPT</div></div>
-    <div class="stat-card"><div class="stat-value" id="s-google">-</div><div class="stat-label">Google</div></div>
-    <div class="stat-card"><div class="stat-value" id="s-residential">-</div><div class="stat-label">住宅IP</div></div>
-    <div class="stat-card"><div class="stat-value" id="s-users">-</div><div class="stat-label">注册用户</div></div>
-  </div>
-
-  <!-- Type breakdown -->
-  <div class="section">
-    <div class="section-title">类型分布</div>
-    <div class="type-chips" id="type-chips"></div>
-  </div>
-
-  <!-- Actions -->
-  <div class="section">
-    <div class="section-title">操作</div>
-    <div class="btn-group">
-      <button class="btn btn-primary" onclick="triggerValidation()">验证全部代理</button>
-      <button class="btn btn-primary" onclick="triggerQualityCheck()">全部质量检测</button>
-      <button class="btn btn-danger" onclick="cleanupProxies()">清理高错误代理</button>
-      <button class="btn btn-danger" onclick="cleanupUselessProxies()">删除三不通代理</button>
-    </div>
-  </div>
-
-  <!-- Settings Panel -->
-  <div class="section">
-    <div class="section-title">系统设置 <span style="font-weight:400;font-size:13px;color:var(--text-dim)">(修改后点击保存生效)</span></div>
-    <div class="card">
-      <div class="grid-2">
-        <div>
-          <div class="form-group">
-            <label>管理员密码</label>
-            <input id="s-admin_password" type="password" placeholder="admin password">
-          </div>
-          <div class="form-group">
-            <label>最低信任等级</label>
-            <input id="s-min_trust_level" type="number" placeholder="1">
-          </div>
-          <div class="form-group">
-            <label style="display:flex;align-items:center;gap:8px">
-              <input id="s-allow_registration" type="checkbox" style="width:auto">
-              允许用户注册
-            </label>
-          </div>
-          <div class="form-group">
-            <label style="display:flex;align-items:center;gap:8px">
-              <input id="s-enable_oauth" type="checkbox" style="width:auto">
-              启用 OAuth 登录
-            </label>
-          </div>
+    <div class="tab-content active" id="tab-subscriptions">
+        <!-- Stats -->
+        <div class="stat-grid" id="stats">
+            <div class="stat-card"><div class="stat-value" id="s-total">-</div><div class="stat-label">总代理数</div></div>
+            <div class="stat-card"><div class="stat-value" id="s-valid">-</div><div class="stat-label">有效</div></div>
+            <div class="stat-card"><div class="stat-value" id="s-invalid">-</div><div class="stat-label">无效</div></div>
+            <div class="stat-card"><div class="stat-value" id="s-untested">-</div><div class="stat-label">待检测</div></div>
+            <div class="stat-card"><div class="stat-value" id="s-subs">-</div><div class="stat-label">订阅源</div></div>
+            <div class="stat-card"><div class="stat-value" id="s-quality">-</div><div class="stat-label">已质检</div></div>
+            <div class="stat-card"><div class="stat-value" id="s-chatgpt">-</div><div class="stat-label">ChatGPT</div></div>
+            <div class="stat-card"><div class="stat-value" id="s-google">-</div><div class="stat-label">Google</div></div>
+            <div class="stat-card"><div class="stat-value" id="s-residential">-</div><div class="stat-label">住宅IP</div></div>
         </div>
-        <div>
-          <div class="form-group">
-            <label>OAuth Client ID</label>
-            <input id="s-oauth_client_id" placeholder="client_id">
-          </div>
-          <div class="form-group">
-            <label>OAuth Client Secret</label>
-            <input id="s-oauth_client_secret" type="password" placeholder="client_secret">
-          </div>
-          <div class="form-group">
-            <label>OAuth Redirect URI</label>
-            <input id="s-oauth_redirect_uri" placeholder="https://...">
-          </div>
-        </div>
-      </div>
-      <div style="border-top:1px solid var(--border);margin:16px 0;padding-top:16px">
-        <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px">验证 & 质检</div>
+
         <div class="grid-2">
-          <div>
-            <div class="form-group">
-              <label>验证 URL</label>
-              <input id="s-validation_url" placeholder="https://www.bing.com">
-            </div>
-            <div class="form-group">
-              <label>验证超时 (秒)</label>
-              <input id="s-validation_timeout_secs" type="number">
-            </div>
-            <div class="form-group">
-              <label>验证并发数</label>
-              <input id="s-validation_concurrency" type="number">
-            </div>
-            <div class="form-group">
-              <label>验证间隔 (分钟)</label>
-              <input id="s-validation_interval_mins" type="number">
-            </div>
-          </div>
-          <div>
-            <div class="form-group">
-              <label>错误阈值</label>
-              <input id="s-validation_error_threshold" type="number">
-            </div>
-            <div class="form-group">
-              <label>验证批大小</label>
-              <input id="s-validation_batch_size" type="number">
-            </div>
-            <div class="form-group">
-              <label>质检间隔 (分钟)</label>
-              <input id="s-quality_interval_mins" type="number">
-            </div>
-            <div class="form-group">
-              <label>质检并发数</label>
-              <input id="s-quality_concurrency" type="number">
-            </div>
-          </div>
+           <div class="section">
+             <div class="section-title">操作</div>
+             <div class="btn-group">
+               <button class="btn btn-primary" onclick="triggerValidation()">验证全部</button>
+               <button class="btn btn-primary" onclick="triggerQualityCheck()">质检全部</button>
+               <button class="btn btn-danger" onclick="cleanupProxies()">清理无效</button>
+               <button class="btn btn-danger" onclick="cleanupUselessProxies()">清理三不通</button>
+             </div>
+           </div>
+           <div class="section">
+             <div class="section-title">类型分布</div>
+             <div class="type-chips" id="type-chips"></div>
+           </div>
         </div>
-      </div>
-      <div style="border-top:1px solid var(--border);margin:16px 0;padding-top:16px">
-        <div class="grid-2">
-          <div class="form-group">
-            <label>订阅自动刷新间隔 (分钟, 0=禁用)</label>
-            <input id="s-subscription_auto_refresh_interval_mins" type="number">
-          </div>
-        </div>
-      </div>
-      <button class="btn btn-primary" onclick="saveSettings()" style="margin-top:8px">💾 保存设置</button>
-    </div>
-  </div>
 
-  <!-- User Management -->
-  <div class="section">
-    <div class="section-title">用户管理 <span id="user-count" style="font-weight:400;font-size:13px;color:var(--text-dim)"></span></div>
-    <div class="card" style="margin-bottom:16px">
-      <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
-        <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0">
-          <label>用户名</label>
-          <input id="new-user-username" placeholder="输入用户名">
+        <!-- Add & List Subscriptions -->
+        <div class="section">
+            <div class="section-title">订阅源</div>
+            <div class="card" style="margin-bottom: 16px;">
+                <div class="grid-2">
+                    <div>
+                        <div class="form-group">
+                            <label>名称</label>
+                            <input id="add-sub-name" placeholder="我的代理列表">
+                        </div>
+                        <div class="form-group">
+                            <label>类型</label>
+                            <select id="add-sub-type">
+                                <option value="auto">自动检测</option>
+                                <option value="v2ray">V2Ray URI</option>
+                                <option value="clash">Clash YAML</option>
+                                <option value="base64">Base64</option>
+                                <option value="socks5">SOCKS5 (纯文本)</option>
+                                <option value="socks4">SOCKS4 (纯文本)</option>
+                                <option value="http">HTTP (纯文本)</option>
+                                <option value="https">HTTPS (纯文本)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="form-group">
+                            <label>URL (二选一)</label>
+                            <input id="add-sub-url" placeholder="https://...">
+                        </div>
+                        <div class="form-group">
+                            <label>文本内容 (二选一)</label>
+                            <textarea id="add-sub-content" placeholder="在此粘贴订阅内容..." style="min-height: 48px;"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="adminAddSubscription()">+ 添加订阅</button>
+            </div>
+            
+            <div class="card">
+                <table>
+                    <thead><tr><th>名称</th><th>URL</th><th>代理数</th><th>操作</th></tr></thead>
+                    <tbody id="sub-table"></tbody>
+                </table>
+                <div class="empty" id="sub-empty">暂无订阅源</div>
+            </div>
         </div>
-        <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0">
-          <label>密码</label>
-          <input id="new-user-password" type="password" placeholder="输入密码">
-        </div>
-        <button class="btn btn-primary" onclick="createPasswordUser()">创建密码用户</button>
-      </div>
-    </div>
-    <div class="card">
-      <table>
-        <thead><tr><th>ID</th><th>用户名</th><th>昵称</th><th>来源</th><th>信任等级</th><th>状态</th><th>API Key</th><th>注册时间</th><th>操作</th></tr></thead>
-        <tbody id="user-table"></tbody>
-      </table>
-      <div class="empty" id="user-empty">暂无注册用户</div>
-    </div>
-  </div>
 
-  <!-- Add Subscription -->
-  <div class="section">
-    <div class="section-title">添加订阅</div>
-    <div class="card">
-      <div class="grid-2">
-        <div>
-          <div class="form-group">
-            <label>名称</label>
-            <input id="add-sub-name" placeholder="我的代理列表">
-          </div>
-          <div class="form-group">
-            <label>类型</label>
-            <select id="add-sub-type">
-              <option value="auto">自动检测</option>
-              <option value="v2ray">V2Ray URI</option>
-              <option value="clash">Clash YAML</option>
-              <option value="base64">Base64</option>
-              <option value="socks5">SOCKS5 (纯文本)</option>
-              <option value="socks4">SOCKS4 (纯文本)</option>
-              <option value="http">HTTP (纯文本)</option>
-              <option value="https">HTTPS (纯文本)</option>
-            </select>
-          </div>
+        <!-- Proxy Table -->
+        <div class="section">
+            <div class="section-title">
+                <span>代理列表 <span id="proxy-count" style="font-weight:400;color:var(--text-dim)"></span></span>
+            </div>
+            <div class="filter-bar">
+                <input id="f-search" placeholder="搜索名称/服务器..." oninput="currentPage=1;renderProxies()">
+                <select id="f-status" onchange="currentPage=1;renderProxies()">
+                    <option value="">全部状态</option>
+                    <option value="valid">有效</option>
+                    <option value="invalid">无效</option>
+                    <option value="untested">待检测</option>
+                    <option value="disabled">已禁用</option>
+                </select>
+                <select id="f-type" onchange="currentPage=1;renderProxies()">
+                    <option value="">全部类型</option>
+                    <option value="vmess">VMess</option>
+                    <option value="vless">VLESS</option>
+                    <option value="trojan">Trojan</option>
+                    <option value="shadowsocks">Shadowsocks</option>
+                    <option value="hysteria2">Hysteria2</option>
+                </select>
+                <select id="f-quality" onchange="currentPage=1;renderProxies()">
+                    <option value="">全部质量</option>
+                    <option value="chatgpt">ChatGPT 可用</option>
+                    <option value="google">Google 可用</option>
+                    <option value="residential">Residential</option>
+                </select>
+            </div>
+            <div class="card">
+                <table>
+                    <thead><tr>
+                        <th onclick="sortBy('name')">名称</th>
+                        <th onclick="sortBy('type')">类型</th>
+                        <th onclick="sortBy('server')">服务器</th>
+                        <th onclick="sortBy('is_valid')">状态</th>
+                        <th onclick="sortBy('error_count')">错误</th>
+                        <th>IP</th>
+                        <th onclick="sortBy('country')">国家</th>
+                        <th onclick="sortBy('risk')">风险</th>
+                        <th>GPT</th>
+                        <th>Google</th>
+                        <th>住宅</th>
+                        <th>操作</th>
+                    </tr></thead>
+                    <tbody id="proxy-table"></tbody>
+                </table>
+                <div class="empty" id="proxy-empty">暂无代理</div>
+                <div class="pagination" id="proxy-pagination"></div>
+            </div>
         </div>
-        <div>
-          <div class="form-group">
-            <label>订阅 URL</label>
-            <input id="add-sub-url" placeholder="https://...">
-          </div>
-          <div class="form-group">
-            <label>或粘贴内容</label>
-            <textarea id="add-sub-content" placeholder="在此粘贴订阅内容...&#10;SOCKS5/HTTP 纯文本格式: 每行一个 host:port 或 user:pass@host:port"></textarea>
-          </div>
+    </div>
+
+    <!-- Tab Users -->
+    <div class="tab-content" id="tab-users">
+        <div class="section">
+            <div class="section-title">用户管理 <span id="user-count" style="font-weight:400;font-size:13px;color:var(--text-dim)"></span></div>
+            <div class="card" style="margin-bottom:16px">
+                <div class="grid-2">
+                   <div class="form-group" style="margin-bottom:0">
+                       <label>新建密码用户</label>
+                       <input id="new-user-username" placeholder="用户名" style="margin-bottom:8px">
+                       <input id="new-user-password" type="password" placeholder="密码 (最少6位)" style="margin-bottom:8px">
+                       <button class="btn btn-primary btn-sm" onclick="createPasswordUser()">创建用户</button>
+                   </div>
+                   <div class="form-group" style="margin-bottom:0">
+                       <label>统计</label>
+                       <div class="stat-value" id="s-users-panel">0</div>
+                       <div class="stat-label">总用户数</div>
+                   </div>
+                </div>
+            </div>
+            <div class="card">
+                <table>
+                    <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>来源</th><th>状态</th><th>注册时间</th><th>操作</th></tr></thead>
+                    <tbody id="user-table"></tbody>
+                </table>
+                <div class="empty" id="user-empty">暂无用户</div>
+            </div>
         </div>
-      </div>
-      <button class="btn btn-primary" onclick="adminAddSubscription()">添加订阅</button>
     </div>
-  </div>
 
-  <!-- Subscriptions -->
-  <div class="section">
-    <div class="section-title">订阅源</div>
-    <div class="card">
-      <table>
-        <thead><tr><th>名称</th><th>类型</th><th>URL</th><th>代理数</th><th>创建时间</th><th>操作</th></tr></thead>
-        <tbody id="sub-table"></tbody>
-      </table>
-      <div class="empty" id="sub-empty">暂无订阅源</div>
-    </div>
-  </div>
+    <!-- Tab Settings -->
+    <div class="tab-content" id="tab-settings">
+        <!-- General Settings Card -->
+        <div class="settings-card">
+            <h3>通用设置</h3>
+            <div class="form-group">
+                <label>☑ 允许用户注册</label>
+                <input type="checkbox" id="set-allow-registration">
+            </div>
+            <div class="grid-2">
+                <div>
+                   <div class="form-group">
+                       <label>验证 URL</label>
+                       <input id="set-validation-url" placeholder="https://www.bing.com">
+                   </div>
+                   <div class="form-group">
+                       <label>验证超时 (秒)</label>
+                       <input id="set-validation-timeout" type="number">
+                   </div>
+                   <div class="form-group">
+                       <label>验证并发数</label>
+                       <input id="set-validation-concurrency" type="number">
+                   </div>
+                </div>
+                <div>
+                   <div class="form-group">
+                       <label>验证间隔 (分钟)</label>
+                       <input id="set-validation-interval" type="number">
+                   </div>
+                   <div class="form-group">
+                       <label>质检间隔 (分钟)</label>
+                       <input id="set-quality-interval" type="number">
+                   </div>
+                   <div class="form-group">
+                       <label>订阅自动刷新间隔 (分钟, 0=禁用)</label>
+                       <input id="set-sub-refresh-interval" type="number">
+                   </div>
+                </div>
+            </div>
+            <div class="grid-2">
+               <div class="form-group">
+                   <label>验证批大小</label>
+                   <input id="set-validation-batch" type="number">
+               </div>
+               <div class="form-group">
+                   <label>连续错误剔除阈值</label>
+                   <input id="set-error-threshold" type="number">
+               </div>
+            </div>
+            <button class="btn btn-primary" onclick="saveGeneralSettings()">💾 保存通用设置</button>
+        </div>
 
-  <!-- Proxy Table -->
-  <div class="section">
-    <div class="section-title">
-      <span>全部代理 <span id="proxy-count"></span></span>
+        <!-- Linux.do OAuth Card -->
+        <div class="settings-card">
+            <h3>Linux.do OAuth</h3>
+            <div class="form-group">
+                <label>☑ 启用 Linux.do OAuth 登录</label>
+                <input type="checkbox" id="set-linuxdo-enabled">
+            </div>
+            <div class="form-group">
+                <label>Linux.do 最低信任等级</label>
+                <input type="number" id="set-linuxdo-trust" min="0" max="4">
+                <small style="color:var(--text-dim)">Linux.do 社区的用户信任等级，0~4</small>
+            </div>
+            <div class="form-group">
+                <label>Client ID</label>
+                <input id="set-linuxdo-client-id">
+            </div>
+            <div class="form-group">
+                <label>Client Secret</label>
+                <input id="set-linuxdo-client-secret" type="password">
+            </div>
+            <div class="form-group">
+                <label>Redirect URI</label>
+                <input id="set-linuxdo-redirect-uri" placeholder="https://yourdomain.com/api/auth/linuxdo/callback">
+            </div>
+            <button class="btn btn-primary" onclick="saveLinuxDoSettings()">💾 保存 OAuth 设置</button>
+        </div>
     </div>
-    <div class="filter-bar">
-      <input id="f-search" placeholder="搜索名称/服务器..." oninput="currentPage=1;renderProxies()">
-      <select id="f-status" onchange="currentPage=1;renderProxies()">
-        <option value="">全部状态</option>
-        <option value="valid">有效</option>
-        <option value="invalid">无效</option>
-        <option value="untested">待检测</option>
-      </select>
-      <select id="f-type" onchange="currentPage=1;renderProxies()">
-        <option value="">全部类型</option>
-        <option value="vmess">VMess</option>
-        <option value="vless">VLESS</option>
-        <option value="trojan">Trojan</option>
-        <option value="shadowsocks">Shadowsocks</option>
-        <option value="hysteria2">Hysteria2</option>
-      </select>
-      <select id="f-quality" onchange="currentPage=1;renderProxies()">
-        <option value="">全部质量</option>
-        <option value="chatgpt">ChatGPT 可用</option>
-        <option value="google">Google 可用</option>
-        <option value="residential">Residential</option>
-      </select>
-    </div>
-    <div class="card">
-      <table>
-        <thead><tr>
-          <th onclick="sortBy('name')">名称</th>
-          <th onclick="sortBy('type')">类型</th>
-          <th onclick="sortBy('server')">服务器</th>
-          <th onclick="sortBy('is_valid')">状态</th>
-          <th onclick="sortBy('error_count')">错误数</th>
-          <th>端口</th>
-          <th>IP</th>
-          <th onclick="sortBy('country')">国家</th>
-          <th>IP类型</th>
-          <th onclick="sortBy('risk')">风险</th>
-          <th>ChatGPT</th>
-          <th>Google</th>
-          <th>住宅</th>
-          <th>操作</th>
-        </tr></thead>
-        <tbody id="proxy-table"></tbody>
-      </table>
-      <div class="empty" id="proxy-empty">暂无代理</div>
-      <div class="pagination" id="proxy-pagination"></div>
-    </div>
-  </div>
 </div>
 </div>
 
 <script>
+let currentUser = null;
 let allProxies = [];
+let allSubscriptions = [];
 let sortField = 'name';
 let sortDir = 'asc';
 let currentPage = 1;
 const pageSize = 50;
 
-// --- Auth ---
-const STORAGE_KEY = 'zenproxy_admin_password';
-
-function getPassword() { return localStorage.getItem(STORAGE_KEY) || ''; }
-
-function authHeaders() { return { 'Authorization': 'Bearer ' + getPassword() }; }
-
-async function doLogin() {
-  const pwd = document.getElementById('login-password').value;
-  if (!pwd) return;
-  try {
-    const r = await fetch('/api/admin/stats', { headers: { 'Authorization': 'Bearer ' + pwd } });
-    if (r.status === 401) {
-      document.getElementById('login-error').style.display = 'block';
-      return;
-    }
-    localStorage.setItem(STORAGE_KEY, pwd);
-    document.getElementById('login-overlay').style.display = 'none';
-    document.getElementById('app').style.display = '';
-    refresh();
-  } catch(e) {
-    document.getElementById('login-error').style.display = 'block';
-  }
-}
-
-function doLogout() {
-  localStorage.removeItem(STORAGE_KEY);
-  location.reload();
-}
-
-function checkAuth() {
-  const pwd = getPassword();
-  if (pwd) {
-    fetch('/api/admin/stats', { headers: { 'Authorization': 'Bearer ' + pwd } }).then(r => {
-      if (r.status === 401) {
-        localStorage.removeItem(STORAGE_KEY);
-        document.getElementById('login-overlay').style.display = '';
-        document.getElementById('app').style.display = 'none';
-      } else {
-        document.getElementById('login-overlay').style.display = 'none';
-        document.getElementById('app').style.display = '';
-        refresh();
-      }
-    }).catch(() => {
-      document.getElementById('login-overlay').style.display = '';
-      document.getElementById('app').style.display = 'none';
-    });
-  }
-}
-
-// --- API helper ---
 async function api(path, opts={}) {
   try {
-    opts.headers = { ...authHeaders(), ...(opts.headers||{}) };
+    opts.headers = { 'Content-Type': 'application/json', ...(opts.headers||{}) };
     const r = await fetch(path, opts);
-    if (r.status === 401) {
-      localStorage.removeItem(STORAGE_KEY);
-      location.reload();
+    if (r.status === 401 || r.status === 403) {
+      if(path !== '/api/auth/me') {
+         window.location.href = '/';
+      }
       return null;
     }
     return await r.json();
@@ -437,15 +395,68 @@ async function api(path, opts={}) {
   catch(e) { toast('错误: '+e.message); return null; }
 }
 
-function toast(msg) {
+function toast(msg, type='info') {
   const t = document.createElement('div');
   t.className='toast'; t.textContent=msg;
+  if(type==='error') t.style.borderLeft = '4px solid var(--danger)';
   document.body.appendChild(t);
   setTimeout(()=>t.remove(),3000);
 }
 
 function esc(s) { if(!s) return ''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
+// --- Init & Tab logic ---
+async function init() {
+    try {
+        const d = await api('/api/auth/me');
+        if (!d || !d.username) {
+            window.location.href = '/';
+            return;
+        }
+        currentUser = d;
+        if (d.role === 'user') {
+            document.getElementById('app').style.display='block';
+            document.getElementById('app').innerHTML = `
+                <div class="access-denied">
+                    <h2>权限不足</h2>
+                    <p>您的账户角色为普通用户，无法访问管理后台。</p>
+                    <a href="/">返回仪表盘</a>
+                </div>`;
+            return;
+        }
+        
+        document.getElementById('app').style.display='block';
+        initTab();
+        refresh();
+    } catch (e) {
+        window.location.href = '/';
+    }
+}
+
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    let target = document.getElementById('tab-' + tabName);
+    let targetTab = document.querySelector('.tab[data-tab="'+tabName+'"]');
+    if(!target) { tabName='subscriptions'; target=document.getElementById('tab-subscriptions'); targetTab=document.querySelector('.tab[data-tab="subscriptions"]');}
+    if(target) target.classList.add('active');
+    if(targetTab) targetTab.classList.add('active');
+    window.location.hash = tabName;
+}
+
+function initTab() {
+    const hash = window.location.hash.replace('#', '') || 'subscriptions';
+    switchTab(hash);
+}
+
+async function logout() {
+   await fetch('/api/auth/logout', {method:'POST'});
+   window.location.href = '/';
+}
+
+function refresh() { loadStats(); loadUsers(); loadSubscriptions(); loadProxies(); loadSettings(); }
+
+// --- Stats & Proxies ---
 async function loadStats() {
   const d = await api('/api/admin/stats');
   if(!d) return;
@@ -455,132 +466,21 @@ async function loadStats() {
   document.getElementById('s-untested').textContent = d.untested_proxies??0;
   document.getElementById('s-subs').textContent = d.subscriptions??0;
   document.getElementById('s-quality').textContent = d.quality_checked??0;
-  const tc = document.getElementById('type-chips');
-  if(d.by_type) {
-    tc.innerHTML = Object.entries(d.by_type).map(([k,v])=>`<span class="type-chip">${esc(k)}: ${v}</span>`).join('');
-  }
+  if(d.by_type) document.getElementById('type-chips').innerHTML = Object.entries(d.by_type).map(([k,v])=>`<span class="type-chip">${esc(k)}: ${v}</span>`).join('');
 }
 
-function updateQualityStats() {
-  const checked = allProxies.filter(p => p.quality).length;
-  const chatgpt = allProxies.filter(p => p.quality && p.quality.chatgpt).length;
-  const google = allProxies.filter(p => p.quality && p.quality.google).length;
-  const residential = allProxies.filter(p => p.quality && p.quality.is_residential).length;
-  document.getElementById('s-quality').textContent = checked;
-  document.getElementById('s-chatgpt').textContent = chatgpt;
-  document.getElementById('s-google').textContent = google;
-  document.getElementById('s-residential').textContent = residential;
-}
-
-async function loadUsers() {
-  const d = await api('/api/admin/users');
-  if(!d) return;
-  document.getElementById('s-users').textContent = d.total ?? 0;
-  const tb = document.getElementById('user-table');
-  const empty = document.getElementById('user-empty');
-  document.getElementById('user-count').textContent = d.total ? `(${d.total})` : '';
-  if(!d.users||!d.users.length) { tb.innerHTML=''; empty.style.display=''; return; }
-  empty.style.display='none';
-  tb.innerHTML = d.users.map(u => {
-    const statusBadge = u.is_banned
-      ? '<span class="badge badge-banned">已封禁</span>'
-      : '<span class="badge badge-active">正常</span>';
-    const sourceBadge = u.auth_source === 'password'
-      ? '<span class="badge badge-type">密码</span>'
-      : '<span class="badge badge-valid">OAuth</span>';
-    const actions = u.is_banned
-      ? `<button class="btn btn-success btn-sm" onclick="unbanUser('${esc(u.id)}')">解封</button>`
-      : `<button class="btn btn-warn btn-sm" onclick="banUser('${esc(u.id)}')">封禁</button>`;
-    return `<tr>
-      <td>${esc(u.id)}</td>
-      <td>${esc(u.username)}</td>
-      <td>${esc(u.name||'-')}</td>
-      <td>${sourceBadge}</td>
-      <td>${u.trust_level}</td>
-      <td>${statusBadge}</td>
-      <td class="api-key-cell" title="${esc(u.api_key)}">${esc(u.api_key)}</td>
-      <td>${new Date(u.created_at).toLocaleString()}</td>
-      <td class="btn-group">
-        ${actions}
-        <button class="btn btn-danger btn-sm" onclick="deleteUser('${esc(u.id)}')">删除</button>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-async function deleteUser(id) {
-  if(!confirm('确定删除该用户？该操作不可撤销。')) return;
-  await api('/api/admin/users/'+id, {method:'DELETE'});
-  toast('用户已删除');
-  loadUsers();
-}
-
-async function banUser(id) {
-  if(!confirm('确定封禁该用户？用户将被强制下线。')) return;
-  await api('/api/admin/users/'+id+'/ban', {method:'POST'});
-  toast('用户已封禁');
-  loadUsers();
-}
-
-async function unbanUser(id) {
-  await api('/api/admin/users/'+id+'/unban', {method:'POST'});
-  toast('用户已解封');
-  loadUsers();
-}
-
-async function loadSubscriptions() {
-  const d = await api('/api/subscriptions');
-  if(!d) return;
-  const tb = document.getElementById('sub-table');
-  const empty = document.getElementById('sub-empty');
-  if(!d.subscriptions||!d.subscriptions.length) { tb.innerHTML=''; empty.style.display=''; return; }
-  empty.style.display='none';
-  tb.innerHTML = d.subscriptions.map(s=>`<tr>
-    <td>${esc(s.name)}</td>
-    <td><span class="badge badge-type">${esc(s.sub_type)}</span></td>
-    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(s.url||'(内容)')}</td>
-    <td>${s.proxy_count}</td>
-    <td>${new Date(s.created_at).toLocaleString()}</td>
-    <td class="btn-group">
-      <button class="btn btn-primary btn-sm" onclick="refreshSub('${s.id}')">刷新</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteSub('${s.id}')">删除</button>
-    </td>
-  </tr>`).join('');
-}
-
-async function adminAddSubscription() {
-  const name = document.getElementById('add-sub-name').value.trim();
-  const subType = document.getElementById('add-sub-type').value;
-  const url = document.getElementById('add-sub-url').value.trim();
-  const content = document.getElementById('add-sub-content').value.trim();
-  if (!name) return toast('请输入名称');
-  if (!url && !content) return toast('请输入 URL 或粘贴内容');
-  const body = { name, type: subType };
-  if (url) body.url = url;
-  else body.content = content;
-  toast('正在添加订阅...');
-  const d = await api('/api/subscriptions', {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  if (d && d.subscription) {
-    toast(`已添加 ${d.proxies_added} 个代理`);
-    document.getElementById('add-sub-name').value = '';
-    document.getElementById('add-sub-type').value = 'auto';
-    document.getElementById('add-sub-url').value = '';
-    document.getElementById('add-sub-content').value = '';
-    refresh();
-  } else if (d && d.error) {
-    toast('错误: ' + d.error);
-  }
+function updateLocalQualityStats() {
+  document.getElementById('s-quality').textContent = allProxies.filter(p => p.quality).length;
+  document.getElementById('s-chatgpt').textContent = allProxies.filter(p => p.quality && p.quality.chatgpt).length;
+  document.getElementById('s-google').textContent = allProxies.filter(p => p.quality && p.quality.google).length;
+  document.getElementById('s-residential').textContent = allProxies.filter(p => p.quality && p.quality.is_residential).length;
 }
 
 async function loadProxies() {
   const d = await api('/api/admin/proxies');
   if(!d) return;
   allProxies = d.proxies||[];
-  updateQualityStats();
+  updateLocalQualityStats();
   renderProxies();
 }
 
@@ -592,7 +492,8 @@ function renderProxies() {
 
   let filtered = allProxies.filter(p => {
     if(search && !p.name.toLowerCase().includes(search) && !p.server.toLowerCase().includes(search)) return false;
-    if(status && p.status!==status) return false;
+    if(status === 'disabled' && !p.is_disabled) return false;
+    if(status && status !== 'disabled' && (p.is_disabled || p.status!==status)) return false;
     if(type_ && p.type!==type_) return false;
     if(quality==='chatgpt' && (!p.quality||!p.quality.chatgpt)) return false;
     if(quality==='google' && (!p.quality||!p.quality.google)) return false;
@@ -606,7 +507,7 @@ function renderProxies() {
       case 'name': va=a.name; vb=b.name; break;
       case 'type': va=a.type; vb=b.type; break;
       case 'server': va=a.server; vb=b.server; break;
-      case 'is_valid': va=a.status==='valid'?0:a.status==='untested'?1:2; vb=b.status==='valid'?0:b.status==='untested'?1:2; break;
+      case 'is_valid': va=a.is_disabled?3:a.status==='valid'?0:a.status==='untested'?1:2; vb=b.is_disabled?3:b.status==='valid'?0:b.status==='untested'?1:2; break;
       case 'error_count': va=a.error_count; vb=b.error_count; break;
       case 'country': va=a.quality&&a.quality.country?a.quality.country:'zzz'; vb=b.quality&&b.quality.country?b.quality.country:'zzz'; break;
       case 'risk': va=a.quality?a.quality.risk_score:2; vb=b.quality?b.quality.risk_score:2; break;
@@ -630,32 +531,40 @@ function renderProxies() {
 
   tb.innerHTML = filtered.slice(start, end).map(p => {
     const q = p.quality;
-    const yes = '<span class="badge badge-valid">Yes</span>';
-    const no = '<span class="badge badge-invalid">No</span>';
+    const yes = '<span class="badge badge-valid">Y</span>';
+    const no = '<span class="badge badge-invalid">N</span>';
     const na = '<span class="badge" style="background:rgba(148,163,184,.1);color:var(--text-dim)">-</span>';
+    
     let riskBadge = na;
     if(q && q.risk_level && q.risk_level!=='Unknown') {
       const cls = q.risk_score<0.25?'badge-risk-low':q.risk_score<0.5?'badge-risk-med':'badge-risk-high';
       riskBadge = `<span class="badge ${cls}">${q.risk_level} ${(q.risk_score*100).toFixed(0)}%</span>`;
     }
-    return `<tr>
-      <td>${esc(p.name)}</td>
+    
+    const statusBadge = p.is_disabled ? '<span class="badge badge-disabled">已禁用</span>' :
+        (p.status==='valid'?'<span class="badge badge-valid">有效</span>':p.status==='untested'?'<span class="badge badge-untested">待检测</span>':'<span class="badge badge-invalid">无效</span>');
+    const toggleBtn = p.is_disabled ? `<button class="btn-xs btn-success" onclick="toggleProxy('${esc(p.id)}')">启用</button>` : `<button class="btn-xs btn-warning" onclick="toggleProxy('${esc(p.id)}')">禁用</button>`;
+    const validateBtn = !p.is_disabled ? `<button class="btn-xs" onclick="validateSingle('${esc(p.id)}')">验证</button>` : '';
+    const qualityBtn = !p.is_disabled && p.status === 'valid' ? `<button class="btn-xs" onclick="qualitySingle('${esc(p.id)}')">质检</button>` : '';
+
+    return `<tr class="${p.is_disabled ? 'row-disabled' : ''}">
+      <td title="${esc(p.name)}" style="max-width:150px;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</td>
       <td><span class="badge badge-type">${esc(p.type)}</span></td>
-      <td>${esc(p.server)}:${p.port}</td>
-      <td>${p.status==='valid'?'<span class="badge badge-valid">有效</span>':p.status==='untested'?'<span class="badge badge-untested">待检测</span>':'<span class="badge badge-invalid">无效</span>'}</td>
+      <td title="${esc(p.server)}:${p.port}" style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${esc(p.server)}:${p.port}</td>
+      <td>${statusBadge}</td>
       <td>${p.error_count}</td>
-      <td>${p.local_port||'-'}</td>
       <td>${q&&q.ip_address?esc(q.ip_address):'-'}</td>
       <td>${q&&q.country?esc(q.country):'-'}</td>
-      <td>${q&&q.ip_type?esc(q.ip_type):'-'}</td>
       <td>${riskBadge}</td>
       <td>${q?(q.chatgpt?yes:no):na}</td>
       <td>${q?(q.google?yes:no):na}</td>
       <td>${q?(q.is_residential?yes:no):na}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteProxy('${p.id}')">删除</button></td>
+      <td class="actions">
+          ${toggleBtn} ${validateBtn} ${qualityBtn}
+          <button class="btn-xs btn-danger" onclick="deleteProxy('${p.id}')">删除</button>
+      </td>
     </tr>`;
   }).join('');
-
   renderPagination(filtered.length, totalPages);
 }
 
@@ -681,142 +590,223 @@ function renderPagination(total, totalPages) {
 }
 
 function goPage(page) { currentPage = page; renderProxies(); }
+function sortBy(field) { if(sortField===field) sortDir = sortDir==='asc'?'desc':'asc'; else { sortField=field; sortDir='asc'; } renderProxies(); }
 
-function sortBy(field) {
-  if(sortField===field) sortDir = sortDir==='asc'?'desc':'asc';
-  else { sortField=field; sortDir='asc'; }
-  renderProxies();
-}
+async function toggleProxy(id) { await api('/api/admin/proxies/'+id+'/toggle', { method: 'POST' }); loadProxies(); }
+async function validateSingle(id) { await api('/api/admin/proxies/'+id+'/validate', { method: 'POST' }); toast('验证已启动'); setTimeout(loadProxies,3000);}
+async function qualitySingle(id) { await api('/api/admin/proxies/'+id+'/quality', { method: 'POST' }); toast('质量检测已启动'); setTimeout(loadProxies,5000);}
+async function deleteProxy(id) { if(confirm('确定删除该代理？')) { await api('/api/admin/proxies/'+id, {method:'DELETE'}); toast('已删除'); loadProxies(); } }
 
-async function deleteProxy(id) {
-  if(!confirm('确定删除该代理？')) return;
-  const d = await api('/api/admin/proxies/'+id, {method:'DELETE'});
-  if(d && d.error) { toast('删除失败: '+d.error); return; }
-  if(!d) return;
-  toast('代理已删除');
-  refresh();
-}
-
-async function deleteSub(id) {
-  if(!confirm('确定删除该订阅源及其所有代理？')) return;
-  const d = await api('/api/subscriptions/'+id, {method:'DELETE'});
-  if(d && d.error) { toast('删除失败: '+d.error); return; }
-  if(!d) return;
-  toast('订阅源已删除');
-  refresh();
-}
-
-async function refreshSub(id) {
-  toast('正在刷新...');
-  const d = await api('/api/subscriptions/'+id+'/refresh', {method:'POST'});
-  if(d) toast('刷新完成: 新增 '+d.proxies_added+' 个代理');
-  refresh();
-}
-
-async function triggerValidation() {
-  toast('正在启动验证...');
-  await api('/api/admin/validate', {method:'POST'});
-}
-
-async function triggerQualityCheck() {
-  toast('正在启动质量检测...');
-  await api('/api/admin/quality-check', {method:'POST'});
-}
-
-async function cleanupProxies() {
-  if(!confirm('确定清理所有超过错误阈值的代理？')) return;
-  const d = await api('/api/admin/proxies/cleanup', {method:'POST'});
-  if(d) toast(d.message);
-  refresh();
-}
-
+async function triggerValidation() { toast('正在启动验证...'); await api('/api/admin/validate', {method:'POST'}); }
+async function triggerQualityCheck() { toast('正在启动质量检测...'); await api('/api/admin/quality-check', {method:'POST'}); }
+async function cleanupProxies() { if(confirm('确定清理高错误代理？')) { const d=await api('/api/admin/proxies/cleanup', {method:'POST'}); if(d) toast(d.message); refresh(); } }
 async function cleanupUselessProxies() {
   const targets = allProxies.filter(p => p.quality && !p.quality.chatgpt && !p.quality.google && !p.quality.is_residential);
-  if(targets.length === 0) { toast('没有三不通代理'); return; }
-  if(!confirm('确定删除 ' + targets.length + ' 个三不通代理（ChatGPT/Google/住宅均为 No）？')) return;
-  let deleted = 0;
-  for(const p of targets) {
-    const d = await api('/api/admin/proxies/'+p.id, {method:'DELETE'});
-    if(d && !d.error) deleted++;
+  if(!targets.length) return toast('没有三不通代理');
+  if(confirm(`确定删除 ${targets.length} 个三不通代理？`)) {
+    let deleted = 0;
+    for(const p of targets) { const d = await api('/api/admin/proxies/'+p.id, {method:'DELETE'}); if(d && !d.error) deleted++; }
+    toast(`已删除 ${deleted} 个代理`); refresh();
   }
-  toast('已删除 ' + deleted + ' 个三不通代理');
-  refresh();
 }
+
+// --- Subscriptions ---
+async function loadSubscriptions() {
+  const d = await api('/api/subscriptions');
+  if(!d) return;
+  allSubscriptions = d.subscriptions||[];
+  const tb = document.getElementById('sub-table');
+  const empty = document.getElementById('sub-empty');
+  if(!allSubscriptions.length) { tb.innerHTML=''; empty.style.display=''; return; }
+  empty.style.display='none';
+  tb.innerHTML = allSubscriptions.map(s=>`<tr id="sub-${s.id}">
+    <td>${esc(s.name)} <span class="badge badge-type" style="margin-left:4px">${esc(s.sub_type)}</span></td>
+    <td class="url-cell">${esc(s.url||'(文本配置)')}</td>
+    <td>${s.proxy_count}</td>
+    <td class="btn-group">
+      <button class="btn btn-xs" onclick="editSubscription('${esc(s.id)}')">编辑</button>
+      <button class="btn btn-xs btn-primary" onclick="refreshSub('${esc(s.id)}')">刷新</button>
+      <button class="btn btn-xs btn-danger" onclick="deleteSub('${esc(s.id)}')">删除</button>
+    </td>
+  </tr>`).join('');
+}
+
+async function adminAddSubscription() {
+  const name = document.getElementById('add-sub-name').value.trim();
+  const subType = document.getElementById('add-sub-type').value;
+  const url = document.getElementById('add-sub-url').value.trim();
+  const content = document.getElementById('add-sub-content').value.trim();
+  if (!name) return toast('请输入名称', 'error');
+  if (!url && !content) return toast('请输入 URL 或粘贴内容', 'error');
+  const body = { name, type: subType };
+  if (url) body.url = url; else body.content = content;
+  toast('正在添加...');
+  const d = await api('/api/subscriptions', { method: 'POST', body: JSON.stringify(body) });
+  if (d && d.subscription) {
+    toast(`已添加 ${d.proxies_added} 个代理`);
+    ['add-sub-name','add-sub-url','add-sub-content'].forEach(i=>document.getElementById(i).value='');
+    refresh();
+  } else if (d && d.error) toast('错误: '+d.error, 'error');
+}
+
+function editSubscription(id) {
+    const row = document.getElementById('sub-' + id);
+    const sub = allSubscriptions.find(s => s.id === id);
+    if(!sub) return;
+    row.innerHTML = `
+        <td>
+           <input id="edit-name-${id}" value="${esc(sub.name)}" class="input-sm" style="margin-bottom:4px">
+           <div><span class="badge badge-type">${esc(sub.sub_type)}</span></div>
+        </td>
+        <td><input id="edit-url-${id}" value="${esc(sub.url || '')}" class="input-sm url-cell" placeholder="若手动配置则留空"></td>
+        <td>${sub.proxy_count}</td>
+        <td class="btn-group">
+            <button class="btn-xs btn-success" onclick="saveSubscription('${id}')">保存</button>
+            <button class="btn-xs" onclick="loadSubscriptions()">取消</button>
+        </td>`;
+}
+
+async function saveSubscription(id) {
+    const name = document.getElementById('edit-name-' + id).value;
+    const url = document.getElementById('edit-url-' + id).value;
+    const resp = await fetch('/api/subscriptions/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, url: url || null }),
+    });
+    if (resp.ok) { toast('订阅已更新'); loadSubscriptions(); loadProxies(); }
+    else { const d = await resp.json(); toast('更新失败: '+d.error, 'error'); }
+}
+
+async function refreshSub(id) { toast('正在刷新...'); const d = await api('/api/subscriptions/'+id+'/refresh', {method:'POST'}); if(d) toast('新增 '+d.proxies_added+' 代理'); refresh(); }
+async function deleteSub(id) { if(confirm('确定删除该订阅及其代理？')) { await api('/api/subscriptions/'+id, {method:'DELETE'}); toast('已删除'); refresh(); } }
+
+// --- Users ---
+async function loadUsers() {
+  const d = await api('/api/admin/users');
+  if(!d) return;
+  document.getElementById('s-users-panel').textContent = d.total ?? 0;
+  document.getElementById('user-count').textContent = d.total ? `(${d.total})` : '';
+  const tb = document.getElementById('user-table');
+  const empty = document.getElementById('user-empty');
+  if(!d.users||!d.users.length) { tb.innerHTML=''; empty.style.display=''; return; }
+  empty.style.display='none';
+  tb.innerHTML = d.users.map(u => {
+    const roleSelect = canChangeRole(u)
+        ? `<select onchange="changeRole('${esc(u.id)}', this.value)" class="input-sm" style="width:auto">
+            <option value="user" ${u.role === 'user' ? 'selected' : ''}>普通用户</option>
+            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理员</option>
+            ${currentUser.role === 'super_admin' ? `<option value="super_admin" ${u.role === 'super_admin' ? 'selected' : ''}>超级管理员</option>` : ''}
+           </select>`
+        : `<span class="badge ${u.role === 'super_admin'?'badge-danger':u.role==='admin'?'badge-warn':'badge-valid'}">${roleText(u.role)}</span>`;
+
+    const banBtn = u.is_banned ? `<button class="btn-xs btn-success" onclick="unbanUser('${esc(u.id)}')">解封</button>` : `<button class="btn-xs btn-warning" onclick="banUser('${esc(u.id)}')">封禁</button>`;
+    const deleteBtn = canDelete(u) ? `<button class="btn-xs btn-danger" onclick="deleteUser('${esc(u.id)}')">删除</button>` : '';
+    
+    return `<tr>
+      <td>${esc(u.id.substring(0,8))}..</td>
+      <td>${esc(u.username)}</td>
+      <td>${roleSelect}</td>
+      <td>${u.auth_source==='password'?'<span class="badge badge-type">密码</span>':'<span class="badge badge-valid">OAuth</span>'}</td>
+      <td>${u.is_banned?'<span class="badge badge-banned">已封禁</span>':'<span class="badge badge-active">正常</span>'}</td>
+      <td>${new Date(u.created_at).toLocaleString()}</td>
+      <td class="btn-group">
+        ${banBtn}
+        ${deleteBtn}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function roleText(r) { return r==='super_admin'?'超级管理员':r==='admin'?'管理员':'普通用户'; }
+function canChangeRole(user) {
+    if (user.id === currentUser.id) return false;
+    if (currentUser.role === 'super_admin') return true;
+    if (currentUser.role === 'admin' && user.role !== 'super_admin') return true;
+    return false;
+}
+function canDelete(user) {
+    if (user.id === currentUser.id) return false;
+    if (currentUser.role === 'super_admin') return true;
+    if (currentUser.role === 'admin' && user.role === 'user') return true;
+    return false;
+}
+
+async function changeRole(id, role) {
+    const r = await fetch('/api/admin/users/' + id + '/role', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
+    if (r.ok) toast('角色已更新'); else { const d=await r.json(); toast(d.error||'操作失败', 'error'); }
+    loadUsers();
+}
+async function deleteUser(id) { if(confirm('确定删除该用户？该操作不可撤销。')) { await api('/api/admin/users/'+id, {method:'DELETE'}); toast('已删除'); loadUsers(); } }
+async function banUser(id) { if(confirm('确定封禁该用户？用户将被强制下线。')) { await api('/api/admin/users/'+id+'/ban', {method:'POST'}); toast('已封禁'); loadUsers(); } }
+async function unbanUser(id) { await api('/api/admin/users/'+id+'/unban', {method:'POST'}); toast('已解封'); loadUsers(); }
 
 async function createPasswordUser() {
   const username = document.getElementById('new-user-username').value.trim();
   const password = document.getElementById('new-user-password').value;
-  if (!username || !password) return toast('请输入用户名和密码');
-  if (password.length < 6) return toast('密码至少 6 个字符');
-  const d = await api('/api/admin/users/create', {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
-  if (d && d.user) {
-    toast('用户已创建: ' + d.user.username);
-    document.getElementById('new-user-username').value = '';
-    document.getElementById('new-user-password').value = '';
-    loadUsers();
-  } else if (d && d.error) {
-    toast('创建失败: ' + d.error);
-  }
+  if (!username || password.length<6) return toast('请输入合法信息', 'error');
+  const d = await api('/api/admin/users/create', { method: 'POST', body: JSON.stringify({ username, password }) });
+  if (d && d.user) { toast('已创建: '+d.user.username); document.getElementById('new-user-username').value=''; document.getElementById('new-user-password').value=''; loadUsers(); }
+  else if (d && d.error) toast(d.error, 'error');
 }
 
 // --- Settings ---
-const settingsKeys = [
-  'admin_password','min_trust_level','allow_registration','enable_oauth',
-  'oauth_client_id','oauth_client_secret','oauth_redirect_uri',
-  'validation_url','validation_timeout_secs','validation_concurrency',
-  'validation_interval_mins','validation_error_threshold','validation_batch_size',
-  'quality_interval_mins','quality_concurrency',
-  'subscription_auto_refresh_interval_mins'
-];
-
 async function loadSettings() {
   const d = await api('/api/admin/settings');
   if(!d) return;
-  for(const k of settingsKeys) {
-    const el = document.getElementById('s-'+k);
+  const mapList = {
+      'allow_registration': 'set-allow-registration',
+      'validation_url': 'set-validation-url',
+      'validation_timeout_secs': 'set-validation-timeout',
+      'validation_concurrency': 'set-validation-concurrency',
+      'validation_interval_mins': 'set-validation-interval',
+      'validation_batch_size': 'set-validation-batch',
+      'validation_error_threshold': 'set-error-threshold',
+      'quality_interval_mins': 'set-quality-interval',
+      'subscription_auto_refresh_interval_mins': 'set-sub-refresh-interval',
+      'linuxdo_oauth_enabled': 'set-linuxdo-enabled',
+      'linuxdo_min_trust_level': 'set-linuxdo-trust',
+      'linuxdo_client_id': 'set-linuxdo-client-id',
+      'linuxdo_client_secret': 'set-linuxdo-client-secret',
+      'linuxdo_redirect_uri': 'set-linuxdo-redirect-uri'
+  };
+  for(const k in mapList) {
+    const el = document.getElementById(mapList[k]);
     if(!el) continue;
     if(el.type === 'checkbox') el.checked = d[k] === 'true';
     else el.value = d[k] || '';
   }
 }
 
-async function saveSettings() {
-  const payload = {};
-  for(const k of settingsKeys) {
-    const el = document.getElementById('s-'+k);
-    if(!el) continue;
-    if(el.type === 'checkbox') payload[k] = el.checked ? 'true' : 'false';
-    else payload[k] = el.value;
-  }
-  // If admin password changed, warn user
-  const newPwd = payload.admin_password;
-  if(newPwd && newPwd !== getPassword()) {
-    if(!confirm('管理员密码已修改，保存后将使用新密码登录。确定？')) return;
-  }
-  const d = await api('/api/admin/settings', {
-    method: 'PUT',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  if(d && d.message) {
-    toast('✅ ' + d.message);
-    // Update stored password if changed
-    if(newPwd && newPwd !== getPassword()) {
-      localStorage.setItem(STORAGE_KEY, newPwd);
-    }
-  } else if(d && d.error) {
-    toast('❌ ' + d.error);
-  }
+async function saveGeneralSettings() {
+    const payload = {
+        allow_registration: document.getElementById('set-allow-registration').checked.toString(),
+        validation_url: document.getElementById('set-validation-url').value,
+        validation_timeout_secs: document.getElementById('set-validation-timeout').value,
+        validation_concurrency: document.getElementById('set-validation-concurrency').value,
+        validation_interval_mins: document.getElementById('set-validation-interval').value,
+        validation_batch_size: document.getElementById('set-validation-batch').value,
+        validation_error_threshold: document.getElementById('set-error-threshold').value,
+        quality_interval_mins: document.getElementById('set-quality-interval').value,
+        subscription_auto_refresh_interval_mins: document.getElementById('set-sub-refresh-interval').value,
+    };
+    const d = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(payload) });
+    if(d && !d.error) { toast('✅ 通用设置已保存'); }
 }
 
-function refresh() { loadStats(); loadUsers(); loadSubscriptions(); loadProxies(); loadSettings(); }
+async function saveLinuxDoSettings() {
+    const payload = {
+        linuxdo_oauth_enabled: document.getElementById('set-linuxdo-enabled').checked.toString(),
+        linuxdo_min_trust_level: document.getElementById('set-linuxdo-trust').value,
+        linuxdo_client_id: document.getElementById('set-linuxdo-client-id').value,
+        linuxdo_client_secret: document.getElementById('set-linuxdo-client-secret').value,
+        linuxdo_redirect_uri: document.getElementById('set-linuxdo-redirect-uri').value,
+    };
+    const d = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(payload) });
+    if(d && !d.error) { toast('✅ OAuth 设置已保存'); }
+}
 
-// Init: check auth
-checkAuth();
+window.onload = init;
 </script>
 </body>
 </html>
