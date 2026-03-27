@@ -52,6 +52,29 @@ async fn main() {
         tracing::error!("Failed to seed settings: {e}");
     }
 
+    // Ensure at least one super_admin exists
+    match db.count_users_by_role("super_admin") {
+        Ok(count) if count == 0 => {
+            use argon2::{Argon2, PasswordHasher};
+            use argon2::password_hash::{SaltString, rand_core::OsRng};
+
+            let salt = SaltString::generate(&mut OsRng);
+            let hash = Argon2::default()
+                .hash_password(b"admin", &salt)
+                .expect("Failed to hash default password")
+                .to_string();
+
+            match db.create_password_user("admin", &hash, 0, "super_admin") {
+                Ok(_user) => {
+                    tracing::warn!("=== Created default super_admin: admin/admin — CHANGE THIS IMMEDIATELY ===");
+                }
+                Err(e) => tracing::error!("Failed to create default super_admin: {e}"),
+            }
+        }
+        Ok(_) => {} // At least one super_admin exists
+        Err(e) => tracing::error!("Failed to check super_admin count: {e}"),
+    }
+
     // Initialize proxy pool from database (includes saved local_port values)
     let pool = ProxyPool::new();
     pool.load_from_db(&db);

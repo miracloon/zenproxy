@@ -44,6 +44,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/admin/users/:id/unban", post(admin::users::unban_user))
         .route("/api/admin/users/create", post(admin::users::create_password_user))
         .route("/api/admin/users/:id/password", put(admin::users::reset_user_password))
+        .route("/api/admin/users/:id/role", put(admin::users::change_user_role))
         .route("/api/admin/settings", get(admin::settings::get_settings).put(admin::settings::update_settings))
         .route(
             "/api/subscriptions",
@@ -88,19 +89,22 @@ pub fn router(state: Arc<AppState>) -> Router {
 
 async fn admin_auth(
     State(state): State<Arc<AppState>>,
-    request: Request<axum::body::Body>,
+    mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
     // Session-based admin auth: require valid session with admin or super_admin role
-    let user = auth::extract_session_user(&state, request.headers())
+    let headers = request.headers().clone();
+    let user = auth::extract_session_user(&state, &headers)
         .await
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-    if user.role == "admin" || user.role == "super_admin" {
-        Ok(next.run(request).await)
-    } else {
-        Err(StatusCode::FORBIDDEN)
+    if user.role == "user" {
+        return Err(StatusCode::FORBIDDEN);
     }
+
+    // Inject user into request extensions for downstream handlers
+    request.extensions_mut().insert(user);
+    Ok(next.run(request).await)
 }
 
 async fn user_page() -> axum::response::Html<&'static str> {

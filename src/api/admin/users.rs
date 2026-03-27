@@ -19,10 +19,40 @@ pub async fn list_users(
 }
 
 pub async fn delete_user(
+    current_user: super::CurrentUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let target = state.db.get_user_by_id(&id)?
+        .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    // Cannot delete yourself
+    if current_user.id == id {
+        return Err(AppError::BadRequest("Cannot delete your own account".into()));
+    }
+
+    match (current_user.role.as_str(), target.role.as_str()) {
+        ("super_admin", "super_admin") => {
+            // Check: must keep at least 1 super_admin
+            let count = state.db.count_users_by_role("super_admin")?;
+            if count <= 1 {
+                return Err(AppError::BadRequest("Cannot delete the last super_admin".into()));
+            }
+        }
+        ("super_admin", _) => { /* OK */ }
+        ("admin", "user") => { /* OK */ }
+        ("admin", _) => {
+            return Err(AppError::Forbidden("Admin can only delete user-level accounts".into()));
+        }
+        _ => return Err(AppError::Forbidden("Insufficient permissions".into())),
+    }
+
+    // Delete user sessions first, then user
+    state.db.delete_user_sessions(&id).ok();
     state.db.delete_user(&id)?;
+    state.auth_cache.retain(|_, (u, _)| u.id != id);
+
+    tracing::info!("User {} deleted by {}", target.username, current_user.username);
     Ok(Json(json!({ "message": "User deleted" })))
 }
 
@@ -108,4 +138,50 @@ pub async fn reset_user_password(
     state.db.update_user_password(&id, &hash)?;
 
     Ok(Json(json!({ "message": "Password updated" })))
+}
+
+// --- Role Management ---
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ChangeRoleRequest {
+    pub role: String,
+}
+
+pub async fn change_user_role(
+    current_user: super::CurrentUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<ChangeRoleRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // Validate role value
+    if !["user", "admin", "super_admin"].contains(&req.role.as_str()) {
+        return Err(AppError::BadRequest("Invalid role. Must be 'user', 'admin', or 'super_admin'".into()));
+    }
+
+    let target = state.db.get_user_by_id(&id)?
+        .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    // Permission checks
+    match current_user.role.as_str() {
+        "super_admin" => {
+            // super_admin can change anyone to any role
+        }
+        "admin" => {
+            // admin can only change user↔admin
+            if target.role == "super_admin" {
+                return Err(AppError::Forbidden("Cannot modify super_admin's role".into()));
+            }
+            if req.role == "super_admin" {
+                return Err(AppError::Forbidden("Only super_admin can promote to super_admin".into()));
+            }
+        }
+        _ => return Err(AppError::Forbidden("Insufficient permissions".into())),
+    }
+
+    state.db.update_user_role(&id, &req.role)?;
+    // Invalidate auth cache for this user
+    state.auth_cache.retain(|_, (u, _)| u.id != id);
+
+    tracing::info!("User {} role changed to {} by {}", target.username, req.role, current_user.username);
+    Ok(Json(json!({ "message": format!("Role updated to {}", req.role) })))
 }
