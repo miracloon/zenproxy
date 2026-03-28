@@ -84,7 +84,9 @@ pub fn router(state: Arc<AppState>) -> Router {
     let page_routes = Router::new()
         .route("/", get(user_page))
         .route("/admin", get(admin_page))
-        .route("/docs", get(docs_page));
+        .route("/docs", get(docs_page))
+        .route("/favicon.ico", get(serve_favicon))
+        .route("/icon.png", get(serve_icon));
 
     Router::new()
         .merge(auth_routes)
@@ -135,4 +137,26 @@ async fn docs_page() -> axum::response::Html<String> {
     let template = include_str!("../web/docs.html");
     let page = template.replace("{{CONTENT}}", &rendered);
     axum::response::Html(page)
+}
+
+async fn serve_favicon() -> Result<Response, StatusCode> {
+    serve_file("data/favicon.ico", "image/x-icon").await
+}
+
+async fn serve_icon() -> Result<Response, StatusCode> {
+    serve_file("data/icon.png", "image/png").await
+}
+
+async fn serve_file(path: &str, content_type: &str) -> Result<Response, StatusCode> {
+    match tokio::fs::read(path).await {
+        Ok(data) => {
+            Ok(axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", content_type)
+                .header("Cache-Control", "public, max-age=86400")
+                .body(axum::body::Body::from(data))
+                .unwrap())
+        }
+        Err(_) => Err(StatusCode::NOT_FOUND),
+    }
 }

@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ZenProxy 管理后台</title>
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
+<link rel="icon" href="/icon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon.png">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 :root { --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a; --primary:#6c63ff; --primary-hover:#5a52e0; --success:#22c55e; --danger:#ef4444; --warn:#f59e0b; --text:#e2e8f0; --text-dim:#94a3b8; --text-bright:#f8fafc; }
@@ -301,8 +304,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
         <div class="settings-card">
             <h3>通用设置</h3>
             <div class="form-group">
-                <label>☑ 允许用户注册</label>
-                <input type="checkbox" id="set-allow-registration">
+                <label><input type="checkbox" id="set-allow-registration"> 允许用户注册</label>
             </div>
             <div class="grid-2">
                 <div>
@@ -351,13 +353,12 @@ tr:hover td { background:rgba(108,99,255,.03); }
         <div class="settings-card">
             <h3>Linux.do OAuth</h3>
             <div class="form-group">
-                <label>☑ 启用 Linux.do OAuth 登录</label>
-                <input type="checkbox" id="set-linuxdo-enabled">
+                <label><input type="checkbox" id="set-linuxdo-enabled"> 启用 Linux.do OAuth 登录</label>
             </div>
             <div class="form-group">
                 <label>Linux.do 最低信任等级</label>
-                <input type="number" id="set-linuxdo-trust" min="0" max="4">
-                <small style="color:var(--text-dim)">Linux.do 社区的用户信任等级，0~4</small>
+                <input type="number" id="set-linuxdo-trust" min="0" max="3">
+                <small style="color:var(--text-dim)">Linux.do 社区的用户信任等级，0~3</small>
             </div>
             <div class="form-group">
                 <label>Client ID</label>
