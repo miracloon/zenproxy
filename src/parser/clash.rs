@@ -425,12 +425,29 @@ mod tests {
 
     #[test]
     fn test_parse_sc0() {
-        let content = std::fs::read_to_string("C:/tmp/sc0.yaml").unwrap();
+        let content = r#"
+proxies:
+  - name: vmess-demo
+    type: vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 11111111-1111-1111-1111-111111111111
+    alterId: 0
+    cipher: auto
+    tls: true
+    servername: vmess.example.com
+  - name: trojan-demo
+    type: trojan
+    server: trojan.example.com
+    port: 8443
+    password: secret
+    sni: trojan.example.com
+"#;
         let result = parse(&content);
-        println!("Parsed {} proxies", result.len());
-        for p in &result {
-            println!("  {} | {} | {}:{}", p.name, p.proxy_type, p.server, p.port);
-        }
-        assert!(result.len() > 0, "Should parse some proxies");
+        assert_eq!(result.len(), 2, "Should parse the inline sample proxies");
+        assert_eq!(result[0].name, "vmess-demo");
+        assert_eq!(result[0].server, "vmess.example.com");
+        assert_eq!(result[1].name, "trojan-demo");
+        assert_eq!(result[1].server, "trojan.example.com");
     }
 }

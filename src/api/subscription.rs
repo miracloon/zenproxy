@@ -151,7 +151,7 @@ pub async fn add_subscription(
             server: pc.server.clone(),
             port: pc.port,
             singbox_outbound: pc.singbox_outbound.clone(),
-            status: ProxyStatus::Disabled,
+            status: ProxyStatus::Untested,
             local_port: None,
             error_count: 0,
             quality: None,

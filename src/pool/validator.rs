@@ -114,6 +114,75 @@ pub async fn validate_disabled_only(state: Arc<AppState>) -> Result<(), String> 
     Ok(())
 }
 
+/// Validate only invalid proxies, using existing ports for enabled proxies and
+/// temporary ports for disabled proxies.
+pub async fn validate_invalid_only(state: Arc<AppState>) -> Result<(), String> {
+    let _lock = state.validation_lock.lock().await;
+
+    let concurrency = state
+        .db
+        .get_setting("validation_concurrency")
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(state.config.validation.concurrency);
+    let timeout_secs = state
+        .db
+        .get_setting("validation_timeout_secs")
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(state.config.validation.timeout_secs);
+    let timeout_duration = std::time::Duration::from_secs(timeout_secs);
+    let validation_url = state
+        .db
+        .get_setting("validation_url")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| state.config.validation.url.clone());
+
+    crate::api::subscription::sync_proxy_bindings(&state).await;
+
+    let enabled_invalid: Vec<_> = state
+        .pool
+        .get_all()
+        .into_iter()
+        .filter(|p| !p.is_disabled && p.status == ProxyStatus::Invalid && p.local_port.is_some())
+        .collect();
+    if !enabled_invalid.is_empty() {
+        tracing::info!(
+            "Validating {} enabled invalid proxies with existing ports",
+            enabled_invalid.len()
+        );
+        validate_batch(
+            &enabled_invalid,
+            &validation_url,
+            timeout_duration,
+            concurrency,
+            &state,
+        )
+        .await;
+    }
+
+    let disabled_invalid: Vec<_> = state
+        .pool
+        .get_all()
+        .into_iter()
+        .filter(|p| p.is_disabled && p.status == ProxyStatus::Invalid)
+        .collect();
+    validate_proxies_with_temporary_ports(
+        &disabled_invalid,
+        &state,
+        &validation_url,
+        timeout_duration,
+        concurrency,
+        "validate-invalid",
+    )
+    .await;
+
+    Ok(())
+}
+
 /// Validate disabled proxies using temporary ports.
 /// For each batch:
 /// 1. Create temporary bindings (prefer remembered port if available)
@@ -126,10 +195,6 @@ pub async fn validate_disabled_proxies(
     timeout: std::time::Duration,
     concurrency: usize,
 ) {
-    let batch_size = state.db.get_setting("validation_batch_size")
-        .ok().flatten().and_then(|v| v.parse().ok())
-        .unwrap_or(state.config.validation.batch_size);
-
     let disabled: Vec<_> = state
         .pool
         .get_all()
@@ -137,44 +202,67 @@ pub async fn validate_disabled_proxies(
         .filter(|p| p.is_disabled)
         .collect();
 
-    if disabled.is_empty() {
+    validate_proxies_with_temporary_ports(
+        &disabled,
+        state,
+        validation_url,
+        timeout,
+        concurrency,
+        "Phase 2",
+    )
+    .await;
+}
+
+async fn validate_proxies_with_temporary_ports(
+    proxies: &[crate::pool::manager::PoolProxy],
+    state: &Arc<AppState>,
+    validation_url: &str,
+    timeout: std::time::Duration,
+    concurrency: usize,
+    log_prefix: &str,
+) {
+    if proxies.is_empty() {
         return;
     }
 
+    let batch_size = state
+        .db
+        .get_setting("validation_batch_size")
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(state.config.validation.batch_size);
+
     tracing::info!(
-        "Phase 2: validating {} disabled proxies in batches of {}",
-        disabled.len(), batch_size
+        "{log_prefix}: validating {} disabled proxies in batches of {}",
+        proxies.len(),
+        batch_size
     );
 
-    for (batch_idx, batch) in disabled.chunks(batch_size).enumerate() {
-        // Create temp bindings
+    for (batch_idx, batch) in proxies.chunks(batch_size).enumerate() {
         let mut temp_assignments: Vec<(crate::pool::manager::PoolProxy, u16)> = Vec::new();
         {
             let mut mgr = state.singbox.lock().await;
             for proxy in batch {
-                // Check if proxy has a remembered port in DB
-                let db_port = proxy.local_port; // from pool, which was loaded from DB
-                // If pool doesn't have it, check DB directly (pool may have cleared it)
-                let remembered_port = if db_port.is_some() {
-                    db_port
+                let remembered_port = if proxy.local_port.is_some() {
+                    proxy.local_port
                 } else {
-                    // Read from DB directly — the proxy may have port memory
-                    state.db.get_all_proxies().ok()
-                        .and_then(|rows| rows.into_iter()
-                            .find(|r| r.id == proxy.id)
-                            .and_then(|r| r.local_port.map(|p| p as u16)))
+                    state.db.get_all_proxies().ok().and_then(|rows| {
+                        rows.into_iter()
+                            .find(|row| row.id == proxy.id)
+                            .and_then(|row| row.local_port.map(|port| port as u16))
+                    })
                 };
 
                 let result = if let Some(port) = remembered_port {
-                    mgr.create_binding_on_port(&proxy.id, port, &proxy.singbox_outbound).await
+                    mgr.create_binding_on_port(&proxy.id, port, &proxy.singbox_outbound)
+                        .await
                 } else {
                     mgr.create_binding(&proxy.id, &proxy.singbox_outbound).await
                 };
 
                 match result {
-                    Ok(port) => {
-                        temp_assignments.push((proxy.clone(), port));
-                    }
+                    Ok(port) => temp_assignments.push((proxy.clone(), port)),
                     Err(e) => {
                         tracing::warn!("Failed to create temp binding for {}: {e}", proxy.name);
                     }
@@ -186,35 +274,30 @@ pub async fn validate_disabled_proxies(
             continue;
         }
 
-        // Set temp local_port in pool for validation
         for (proxy, port) in &temp_assignments {
             state.pool.set_local_port(&proxy.id, *port);
         }
 
-        // Build validation targets with temp ports
-        let to_validate: Vec<_> = temp_assignments.iter()
-            .filter_map(|(proxy, port)| {
-                let mut p = proxy.clone();
-                p.local_port = Some(*port);
-                Some(p)
+        let to_validate: Vec<_> = temp_assignments
+            .iter()
+            .map(|(proxy, port)| {
+                let mut proxy = proxy.clone();
+                proxy.local_port = Some(*port);
+                proxy
             })
             .collect();
 
         tracing::info!(
-            "Phase 2 batch {}: validating {} disabled proxies",
-            batch_idx + 1, to_validate.len()
+            "{log_prefix} batch {}: validating {} disabled proxies",
+            batch_idx + 1,
+            to_validate.len()
         );
-
         validate_batch(&to_validate, validation_url, timeout, concurrency, state).await;
 
-        // Cleanup: remove temp bindings, restore pool state
-        {
-            let mut mgr = state.singbox.lock().await;
-            for (proxy, port) in &temp_assignments {
-                mgr.remove_binding(&proxy.id, *port).await.ok();
-                state.pool.clear_local_port(&proxy.id);
-                // DO NOT write to DB — temp ports don't create memory
-            }
+        let mut mgr = state.singbox.lock().await;
+        for (proxy, port) in &temp_assignments {
+            mgr.remove_binding(&proxy.id, *port).await.ok();
+            state.pool.clear_local_port(&proxy.id);
         }
     }
 }

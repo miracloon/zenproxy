@@ -8,8 +8,9 @@
 ZenProxy 的运转链路从本地开发到最终用户使用，经过以下主要环节：
 
 ```
-本地开发 → 本地 Docker 构建测试 → 合并到 main → push →
-GitHub Actions 编译（amd64 + arm64）→ 推送镜像到 DockerHub →
+本地开发 → 本地 Docker 构建测试 → 推送 dev（验证型 CI）→
+合并到 main → push →
+GitHub Actions 发布构建（amd64 + arm64）→ 推送镜像到 DockerHub →
 VPS / 本地拉取镜像 → 配置 → 导入订阅源 → 开始使用
 ```
 
@@ -37,7 +38,8 @@ ZenProxy Server（VPS）→ Fetch API → sing-box-zenproxy（本地端口绑定
 | --- | --- | --- | --- | --- | --- |
 | 本地开发 | Rust / Go 源码 | 本地开发机 | 代码变更 | 编译产物 | Docker 构建测试 |
 | 本地测试 | Docker | 本地开发机 | Dockerfile + 源码 | 可运行的容器 | 合并到 main |
-| CI/CD | GitHub Actions | GitHub | main 分支 push | Docker 镜像（amd64 + arm64） | DockerHub |
+| CI/CD（验证） | GitHub Actions | GitHub | `dev` 分支 push | 验证结果（测试 / 构建 / Docker 可构建性） | 是否可进入发布 |
+| CI/CD（发布） | GitHub Actions | GitHub | `main` 分支 push / 版本 tag | Docker 镜像（amd64 + arm64） | DockerHub |
 | 部署 | Docker Compose | VPS / 本地 | 镜像 + 配置文件 | 运行中的服务 | 用户使用 |
 | 代理导入 | ZenProxy Server API | VPS | 订阅 URL / 手动添加 | 代理池数据（SQLite） | 验证与质检 |
 | 验证 | ZenProxy Server | VPS | 代理池中的代理 | Valid / Invalid 标记 | 端口绑定 |
@@ -57,14 +59,43 @@ ZenProxy Server（VPS）→ Fetch API → sing-box-zenproxy（本地端口绑定
 
 ### CI/CD 构建
 
-- **目的**：自动编译多架构镜像并推送到 DockerHub
-- **触发条件**：`main` 分支 push
+- **目的**：将 GitHub Actions 明确拆分为“验证型 CI”和“发布型 CI”
 - **涉及组件**：`.github/workflows/`、`docker/server/Dockerfile`、`docker/client/Dockerfile`
 - **运行位置**：GitHub Actions
+
+**验证型 CI（`dev` 分支）**
+
+- **触发条件**：`dev` 分支 push
+- **目的**：验证当前开发分支是否仍可进入发布流程
+- **输出**：测试与构建结果，不推送 DockerHub
+- **建议内容**：
+  - Rust 测试 / 构建
+  - 必要的 Dockerfile build smoke check
+  - 不产出正式镜像标签
+
+**发布型 CI（`main` 分支 / tag）**
+
+- **触发条件**：`main` 分支 push、版本 tag
+- **目的**：产出正式可部署镜像
 - **输出**：两个 Docker 镜像
   - server 镜像（zenproxy + sing-box），标签：`latest` + 版本 tag
   - client 镜像（sing-box-zenproxy），标签：`latest` + 版本 tag
 - **架构支持**：amd64、arm64
+
+### GitHub Actions 行为意图
+
+项目对 `dev` / `main` 的 GitHub Actions 控制意图如下：
+
+| 分支 | 定位 | GitHub Actions 行为 | 不应做什么 |
+| --- | --- | --- | --- |
+| `dev` | 开发 / 集成分支 | 只做验证型 CI，帮助判断是否具备进入发布分支的条件 | 不自动推送正式 Docker 镜像，不承担发布语义 |
+| `main` | 发布分支 | 运行发布型 CI，构建并推送正式镜像 | 不承载频繁试验性提交 |
+
+这意味着：
+
+- `dev` 的 push 是“进入发布前的自动把关”，不是“自动发布”；
+- `main` 的 push 才是“生成正式镜像并交付部署”的入口；
+- 两条路径都可以构建，但只有 `main` 具备镜像发布权限与发布语义。
 
 ### 部署运行
 
@@ -108,14 +139,14 @@ ZenProxy Server（VPS）→ Fetch API → sing-box-zenproxy（本地端口绑定
 | 分支 | 用途 | 与 CI/CD 的关系 |
 | --- | --- | --- |
 | `fetch` | 完全同步上游仓库 | 不触发 CI |
-| `dev` | 日常开发 | 不触发 CI |
-| `main` | 发布分支，合并 `dev` | push 触发 GitHub Actions 构建镜像 |
+| `dev` | 日常开发 / 集成验证 | push 触发验证型 CI，不推送正式镜像 |
+| `main` | 发布分支，合并 `dev` | push 触发发布型 CI，构建并推送镜像 |
 
 ---
 
 ## 开发环节在整体中的位置
 
-开发产物（代码变更）通过 `dev` → `main` 合并后触发 CI/CD，最终以 Docker 镜像形式交付给用户部署使用。本地开发时通过本地 Docker 构建进行功能验证。
+开发产物首先在 `dev` 上通过验证型 CI，把关测试与构建稳定性；随后再通过 `dev` → `main` 合并进入发布分支，由 `main` 触发发布型 CI，最终以 Docker 镜像形式交付给用户部署使用。本地开发时仍以本地 Docker 构建进行第一层验证。
 
 ==开发环节的 AI 协作方式、阶段边界和版本派生文档逻辑，详见 [`docs/dev_notes/DEV_NOTES_WORKFLOW.md`](docs/dev_notes/DEV_NOTES_WORKFLOW.md)。==
 

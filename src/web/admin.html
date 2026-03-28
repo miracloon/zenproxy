@@ -46,7 +46,8 @@ body { font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var
 .btn-xs.btn-info { background:#3b82f6; color:#fff; border-color:#3b82f6;}
 .btn-xs.btn-info:hover { opacity:.85; }
 .btn-xs:disabled { opacity:.4; cursor:default; pointer-events:none; }
-.actions-cell { display:flex; gap:4px; flex-wrap:wrap; }
+.actions-cell { display:flex; gap:4px; min-width:300px; }
+.actions-cell .btn-xs { min-width:64px; text-align:center; justify-content:center; }
 .spinner-xs { display:inline-block; width:12px; height:12px; border:2px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; margin-right:4px; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .btn-group { display:flex; gap:8px; flex-wrap:wrap; }
@@ -78,6 +79,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
 .filter-bar { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:center; }
 .filter-bar input, .filter-bar select { padding:8px 12px; background:#0f1117; border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; outline:none; }
 .filter-bar input:focus, .filter-bar select:focus { border-color:var(--primary); }
+.page-size-select { margin-left:auto; }
 .empty { text-align:center; color:var(--text-dim); padding:40px; }
 .type-chips { display:flex; gap:8px; flex-wrap:wrap; }
 .type-chip { padding:4px 10px; border-radius:6px; font-size:12px; background:rgba(108,99,255,.1); color:var(--primary); }
@@ -100,6 +102,13 @@ tr:hover td { background:rgba(108,99,255,.03); }
 .tab-link:hover { color: var(--text); }
 
 /* specific */
+.action-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-bottom:24px; }
+.action-zone { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
+.action-zone.danger-zone { border-color:rgba(239,68,68,.3); }
+.action-zone .section-title { font-size:13px; margin-bottom:10px; }
+.selection-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+.selection-toolbar .btn { padding:8px 12px; }
+.selection-summary { color:var(--text-dim); font-size:13px; }
 .settings-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:24px; }
 .settings-card h3 { font-size:16px; color:var(--text-bright); margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border); }
 .row-disabled { opacity: 0.5; }
@@ -113,6 +122,10 @@ tr:hover td { background:rgba(108,99,255,.03); }
 .access-denied p { color: var(--text-dim); margin-bottom: 24px; }
 .access-denied a { color: var(--primary); text-decoration: none; }
 .access-denied a:hover { text-decoration: underline; }
+@media(max-width:960px) {
+  .action-grid { grid-template-columns:1fr; }
+  .page-size-select { margin-left:0; }
+}
 </style>
 </head>
 <body>
@@ -153,23 +166,56 @@ tr:hover td { background:rgba(108,99,255,.03); }
             <div class="stat-card"><div class="stat-value" id="s-residential">-</div><div class="stat-label">住宅IP</div></div>
         </div>
 
-        <div class="grid-2">
-           <div class="section">
-             <div class="section-title">操作</div>
-             <div class="btn-group">
-               <button class="btn btn-primary" onclick="triggerValidation()">验证全部</button>
-               <button class="btn btn-primary" onclick="triggerQualityCheck()">质检全部</button>
-               <button class="btn btn-success" onclick="batchEnableValid()">一键启用有效</button>
-               <button class="btn btn-warn" onclick="batchDisableInvalid()">一键禁用无效</button>
-               <button class="btn btn-primary" onclick="batchValidateDisabled()">验证未启用</button>
-               <button class="btn btn-danger" onclick="cleanupProxies()">清理无效</button>
-               <button class="btn btn-danger" onclick="cleanupUselessProxies()">清理三不通</button>
-             </div>
-           </div>
-           <div class="section">
-             <div class="section-title">类型分布</div>
-             <div class="type-chips" id="type-chips"></div>
-           </div>
+        <div class="section">
+            <div class="section-title">操作</div>
+            <div class="action-grid">
+                <div class="action-zone">
+                    <div class="section-title">选中操作</div>
+                    <div class="selection-toolbar">
+                        <button class="btn btn-sm" onclick="selectAll()">全选 (<span id="filtered-count">0</span>条)</button>
+                        <button class="btn btn-sm" onclick="selectPage()">选本页</button>
+                        <button class="btn btn-sm" onclick="clearSelection()" style="color:var(--text-dim)">取消选择</button>
+                        <span class="selection-summary">已选 <strong id="selection-count">0</strong> 个</span>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-success btn-sm selection-action" disabled onclick="batchSelected('enable')">启用选中</button>
+                        <button class="btn btn-warn btn-sm selection-action" disabled onclick="batchSelected('disable')">禁用选中</button>
+                        <button class="btn btn-primary btn-sm selection-action" disabled onclick="batchSelected('validate')">验证选中</button>
+                        <button class="btn btn-sm selection-action" disabled onclick="batchSelected('quality')">质检选中</button>
+                        <button class="btn btn-danger btn-sm selection-action" disabled onclick="batchSelected('delete')">删除选中</button>
+                    </div>
+                </div>
+                <div class="action-zone">
+                    <div class="section-title">验证与质检</div>
+                    <div class="btn-group">
+                        <button class="btn btn-primary btn-sm" onclick="triggerValidation()">验证全部</button>
+                        <button class="btn btn-primary btn-sm" onclick="batchValidateDisabled()">验证未启用</button>
+                        <button class="btn btn-primary btn-sm" onclick="batchValidateInvalid()">验证无效</button>
+                        <button class="btn btn-sm" onclick="triggerQualityCheck()">质检全部</button>
+                    </div>
+                </div>
+                <div class="action-zone">
+                    <div class="section-title">快捷操作</div>
+                    <div class="btn-group">
+                        <button class="btn btn-success btn-sm" onclick="batchEnableValid()">一键启用有效</button>
+                        <button class="btn btn-warn btn-sm" onclick="batchDisableInvalid()">一键禁用无效</button>
+                    </div>
+                </div>
+                <div class="action-zone danger-zone">
+                    <div class="section-title">清理</div>
+                    <div class="btn-group">
+                        <button class="btn btn-danger btn-sm" onclick="cleanupProxies()">清理无效</button>
+                        <button class="btn btn-danger btn-sm" onclick="cleanupUselessProxies()">清理三不通</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">类型分布</div>
+            <div class="card">
+                <div class="type-chips" id="type-chips"></div>
+            </div>
         </div>
 
         <!-- Add & List Subscriptions -->
@@ -226,11 +272,15 @@ tr:hover td { background:rgba(108,99,255,.03); }
             </div>
             <div class="filter-bar">
                 <input id="f-search" placeholder="搜索名称/服务器..." oninput="currentPage=1;renderProxies()">
-                <select id="f-status" onchange="currentPage=1;renderProxies()">
-                    <option value="">全部状态</option>
+                <select id="f-validity" onchange="currentPage=1;renderProxies()">
+                    <option value="">全部验证状态</option>
                     <option value="valid">有效</option>
                     <option value="invalid">无效</option>
                     <option value="untested">待检测</option>
+                </select>
+                <select id="f-enabled" onchange="currentPage=1;renderProxies()">
+                    <option value="">全部启用状态</option>
+                    <option value="enabled">已启用</option>
                     <option value="disabled">已禁用</option>
                 </select>
                 <select id="f-type" onchange="currentPage=1;renderProxies()">
@@ -247,10 +297,16 @@ tr:hover td { background:rgba(108,99,255,.03); }
                     <option value="google">Google 可用</option>
                     <option value="residential">Residential</option>
                 </select>
+                <select id="f-pagesize" class="page-size-select" onchange="changePageSize()">
+                    <option value="30">每页 30</option>
+                    <option value="50">每页 50</option>
+                    <option value="100">每页 100</option>
+                </select>
             </div>
             <div class="card">
                 <table>
                     <thead><tr>
+                        <th style="width:32px"><input type="checkbox" id="select-all-page" onchange="togglePageSelection(this.checked)"></th>
                         <th onclick="sortBy('name')">名称</th>
                         <th onclick="sortBy('type')">类型</th>
                         <th onclick="sortBy('server')">服务器</th>
@@ -389,7 +445,11 @@ let allSubscriptions = [];
 let sortField = 'name';
 let sortDir = 'asc';
 let currentPage = 1;
-const pageSize = 50;
+let pageSize = parseInt(localStorage.getItem('zenproxy_pagesize') || '50', 10);
+let selectedIds = new Set();
+let pendingActions = {}; // { proxyId: 'validate' | 'quality' }
+const MAX_CONCURRENT_QUALITY = 3;
+const MAX_CONCURRENT_VALIDATE = 5;
 
 async function api(path, opts={}) {
   try {
@@ -437,6 +497,8 @@ async function init() {
         }
         
         document.getElementById('app').style.display='block';
+        const pageSizeSelect = document.getElementById('f-pagesize');
+        if (pageSizeSelect) pageSizeSelect.value = String(pageSize);
         initTab();
         refresh();
     } catch (e) {
@@ -491,20 +553,38 @@ async function loadProxies() {
   const d = await api('/api/admin/proxies');
   if(!d) return;
   allProxies = d.proxies||[];
+  selectedIds = new Set([...selectedIds].filter(id => allProxies.some(p => p.id === id)));
   updateLocalQualityStats();
   renderProxies();
 }
 
-function renderProxies() {
+function canStartQuality() {
+  return Object.values(pendingActions).filter(v => v === 'quality').length < MAX_CONCURRENT_QUALITY;
+}
+
+function canStartValidate() {
+  return Object.values(pendingActions).filter(v => v === 'validate').length < MAX_CONCURRENT_VALIDATE;
+}
+
+function changePageSize() {
+  pageSize = parseInt(document.getElementById('f-pagesize').value, 10);
+  localStorage.setItem('zenproxy_pagesize', String(pageSize));
+  currentPage = 1;
+  renderProxies();
+}
+
+function getFilteredProxies() {
   const search = document.getElementById('f-search').value.toLowerCase();
-  const status = document.getElementById('f-status').value;
+  const validity = document.getElementById('f-validity').value;
+  const enabled = document.getElementById('f-enabled').value;
   const type_ = document.getElementById('f-type').value;
   const quality = document.getElementById('f-quality').value;
 
-  let filtered = allProxies.filter(p => {
+  const filtered = allProxies.filter(p => {
     if(search && !p.name.toLowerCase().includes(search) && !p.server.toLowerCase().includes(search)) return false;
-    if(status === 'disabled' && !p.is_disabled) return false;
-    if(status && status !== 'disabled' && (p.is_disabled || p.status!==status)) return false;
+    if(validity && p.status !== validity) return false;
+    if(enabled === 'enabled' && p.is_disabled) return false;
+    if(enabled === 'disabled' && !p.is_disabled) return false;
     if(type_ && p.type!==type_) return false;
     if(quality==='chatgpt' && (!p.quality||!p.quality.chatgpt)) return false;
     if(quality==='google' && (!p.quality||!p.quality.google)) return false;
@@ -512,13 +592,23 @@ function renderProxies() {
     return true;
   });
 
-  filtered.sort((a,b) => {
+  return filtered.sort((a,b) => {
     let va, vb;
     switch(sortField) {
       case 'name': va=a.name; vb=b.name; break;
       case 'type': va=a.type; vb=b.type; break;
       case 'server': va=a.server; vb=b.server; break;
-      case 'is_valid': va=a.is_disabled?3:a.status==='valid'?0:a.status==='untested'?1:2; vb=b.is_disabled?3:b.status==='valid'?0:b.status==='untested'?1:2; break;
+      case 'is_valid': {
+        const validityA = a.status === 'valid' ? 0 : a.status === 'untested' ? 1 : 2;
+        const validityB = b.status === 'valid' ? 0 : b.status === 'untested' ? 1 : 2;
+        if(validityA !== validityB) return sortDir === 'asc' ? validityA - validityB : validityB - validityA;
+        const disabledA = a.is_disabled ? 1 : 0;
+        const disabledB = b.is_disabled ? 1 : 0;
+        if(disabledA !== disabledB) return sortDir === 'asc' ? disabledA - disabledB : disabledB - disabledA;
+        va = a.name;
+        vb = b.name;
+        break;
+      }
       case 'local_port': va=a.local_port||99999; vb=b.local_port||99999; break;
       case 'error_count': va=a.error_count; vb=b.error_count; break;
       case 'country': va=a.quality&&a.quality.country?a.quality.country:'zzz'; vb=b.quality&&b.quality.country?b.quality.country:'zzz'; break;
@@ -529,6 +619,64 @@ function renderProxies() {
     if(va>vb) return sortDir==='asc'?1:-1;
     return 0;
   });
+}
+
+function getCurrentPageProxies(filtered = getFilteredProxies()) {
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const start = (safePage - 1) * pageSize;
+  return filtered.slice(start, start + pageSize);
+}
+
+function updateSelectionUI(filtered = getFilteredProxies()) {
+  const count = selectedIds.size;
+  const pageItems = getCurrentPageProxies(filtered);
+  const selectionCountEl = document.getElementById('selection-count');
+  const filteredCountEl = document.getElementById('filtered-count');
+  if(selectionCountEl) selectionCountEl.textContent = count;
+  if(filteredCountEl) filteredCountEl.textContent = filtered.length;
+  document.querySelectorAll('.selection-action').forEach(btn => {
+    btn.disabled = count === 0;
+  });
+  const selectAllPage = document.getElementById('select-all-page');
+  if(selectAllPage) {
+    const selectedOnPage = pageItems.filter(p => selectedIds.has(p.id)).length;
+    selectAllPage.checked = pageItems.length > 0 && selectedOnPage === pageItems.length;
+    selectAllPage.indeterminate = selectedOnPage > 0 && selectedOnPage < pageItems.length;
+  }
+}
+
+function toggleSelect(id) {
+  if(selectedIds.has(id)) selectedIds.delete(id);
+  else selectedIds.add(id);
+  renderProxies();
+}
+
+function selectAll() {
+  getFilteredProxies().forEach(p => selectedIds.add(p.id));
+  renderProxies();
+}
+
+function selectPage() {
+  getCurrentPageProxies().forEach(p => selectedIds.add(p.id));
+  renderProxies();
+}
+
+function togglePageSelection(checked) {
+  getCurrentPageProxies().forEach(p => {
+    if(checked) selectedIds.add(p.id);
+    else selectedIds.delete(p.id);
+  });
+  renderProxies();
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  renderProxies();
+}
+
+function renderProxies() {
+  const filtered = getFilteredProxies();
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   if(currentPage > totalPages) currentPage = totalPages;
@@ -538,7 +686,7 @@ function renderProxies() {
   document.getElementById('proxy-count').textContent = `(${filtered.length})`;
   const tb = document.getElementById('proxy-table');
   const empty = document.getElementById('proxy-empty');
-  if(!filtered.length) { tb.innerHTML=''; empty.style.display=''; renderPagination(0, 0); return; }
+  if(!filtered.length) { tb.innerHTML=''; empty.style.display=''; renderPagination(0, 0); updateSelectionUI(filtered); return; }
   empty.style.display='none';
 
   tb.innerHTML = filtered.slice(start, end).map(p => {
@@ -553,14 +701,25 @@ function renderProxies() {
       riskBadge = `<span class="badge ${cls}">${q.risk_level} ${(q.risk_score*100).toFixed(0)}%</span>`;
     }
     
-    const statusBadge = p.is_disabled ? '<span class="badge badge-disabled">已禁用</span>' :
-        (p.status==='valid'?'<span class="badge badge-valid">有效</span>':p.status==='untested'?'<span class="badge badge-untested">待检测</span>':'<span class="badge badge-invalid">无效</span>');
+    const validityBadge = p.status==='valid'
+        ? '<span class="badge badge-valid">有效</span>'
+        : p.status==='untested'
+            ? '<span class="badge badge-untested">待检测</span>'
+            : '<span class="badge badge-invalid">无效</span>';
+    const disabledBadge = p.is_disabled ? ' <span class="badge badge-disabled">已禁用</span>' : '';
+    const statusBadge = validityBadge + disabledBadge;
     const isChecking = pendingActions[p.id];
     const toggleBtn = p.is_disabled ? `<button class="btn-xs btn-success" onclick="toggleProxy('${esc(p.id)}')">启用</button>` : `<button class="btn-xs btn-warning" onclick="toggleProxy('${esc(p.id)}')">禁用</button>`;
-    const connectBtn = !p.is_disabled ? (isChecking==='validate' ? `<button class="btn-xs btn-info" disabled><span class="spinner-xs"></span>检测中</button>` : `<button class="btn-xs btn-info" onclick="validateSingle('${esc(p.id)}')">连通测试</button>`) : '';
-    const qualityBtn = !p.is_disabled && p.status === 'valid' ? (isChecking==='quality' ? `<button class="btn-xs" disabled><span class="spinner-xs"></span>质检中</button>` : `<button class="btn-xs" onclick="qualitySingle('${esc(p.id)}')">质量检测</button>`) : '';
+    const connectBtn = isChecking==='validate'
+        ? `<button class="btn-xs btn-info" disabled><span class="spinner-xs"></span>检测中</button>`
+        : `<button class="btn-xs btn-info" onclick="validateSingle('${esc(p.id)}')" ${!canStartValidate()?'disabled':''}>连通测试</button>`;
+    const qualityBtn = isChecking==='quality'
+        ? `<button class="btn-xs" disabled><span class="spinner-xs"></span>质检中</button>`
+        : `<button class="btn-xs" onclick="qualitySingle('${esc(p.id)}')" ${p.status !== 'valid' || !canStartQuality()?'disabled':''}>质量检测</button>`;
+    const deleteBtn = `<button class="btn-xs btn-danger" onclick="deleteProxy('${p.id}')">删除</button>`;
 
-    return `<tr class="${p.is_disabled ? 'row-disabled' : ''}">
+    return `<tr>
+      <td><input type="checkbox" ${selectedIds.has(p.id)?'checked':''} onchange="toggleSelect('${esc(p.id)}')"></td>
       <td title="${esc(p.name)}" style="max-width:150px;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</td>
       <td><span class="badge badge-type">${esc(p.type)}</span></td>
       <td title="${esc(p.server)}:${p.port}" style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${esc(p.server)}:${p.port}</td>
@@ -574,12 +733,12 @@ function renderProxies() {
       <td>${q?(q.google?yes:no):na}</td>
       <td>${q?(q.is_residential?yes:no):na}</td>
       <td><div class="actions-cell">
-          ${toggleBtn} ${connectBtn} ${qualityBtn}
-          <button class="btn-xs btn-danger" onclick="deleteProxy('${p.id}')">删除</button>
+          ${toggleBtn} ${connectBtn} ${qualityBtn} ${deleteBtn}
       </div></td>
     </tr>`;
   }).join('');
   renderPagination(filtered.length, totalPages);
+  updateSelectionUI(filtered);
 }
 
 function renderPagination(total, totalPages) {
@@ -606,18 +765,30 @@ function renderPagination(total, totalPages) {
 function goPage(page) { currentPage = page; renderProxies(); }
 function sortBy(field) { if(sortField===field) sortDir = sortDir==='asc'?'desc':'asc'; else { sortField=field; sortDir='asc'; } renderProxies(); }
 
-let pendingActions = {}; // { proxyId: 'validate' | 'quality' }
-
 async function toggleProxy(id) { await api('/api/admin/proxies/'+id+'/toggle', { method: 'POST' }); loadProxies(); }
 async function validateSingle(id) {
+  if(!canStartValidate()) { toast('连通测试并发已达上限，请等待'); return; }
   pendingActions[id] = 'validate'; renderProxies();
-  await api('/api/admin/proxies/'+id+'/validate', { method: 'POST' });
+  const d = await api('/api/admin/proxies/'+id+'/validate', { method: 'POST' });
+  if(d && d.error) {
+    delete pendingActions[id];
+    renderProxies();
+    toast(d.error, 'error');
+    return;
+  }
   toast('连通测试已启动');
   pollProxyResult(id, 'validate', 3000, 5);
 }
 async function qualitySingle(id) {
+  if(!canStartQuality()) { toast('质检并发已达上限，请等待'); return; }
   pendingActions[id] = 'quality'; renderProxies();
-  await api('/api/admin/proxies/'+id+'/quality', { method: 'POST' });
+  const d = await api('/api/admin/proxies/'+id+'/quality', { method: 'POST' });
+  if(d && d.error) {
+    delete pendingActions[id];
+    renderProxies();
+    toast(d.error, 'error');
+    return;
+  }
   toast('质量检测已启动');
   pollProxyResult(id, 'quality', 4000, 8);
 }
@@ -895,7 +1066,36 @@ async function batchDisableInvalid() {
 
 async function batchValidateDisabled() {
   toast('正在验证未启用代理...');
-  await api('/api/admin/proxies/validate-disabled', { method: 'POST' });
+  const d = await api('/api/admin/proxies/validate-disabled', { method: 'POST' });
+  if(d && d.error) toast(d.error, 'error');
+  else if(d && d.message) toast(d.message);
+}
+
+async function batchValidateInvalid() {
+  toast('正在验证无效代理...');
+  const d = await api('/api/admin/proxies/validate-invalid', { method: 'POST' });
+  if(d && d.error) toast(d.error, 'error');
+  else if(d && d.message) toast(d.message);
+}
+
+function actionName(action) {
+  return { enable:'启用', disable:'禁用', validate:'验证', quality:'质检', delete:'删除' }[action] || action;
+}
+
+async function batchSelected(action) {
+  const ids = Array.from(selectedIds);
+  if(!ids.length) return;
+  if(action === 'delete' && !confirm(`确定删除 ${ids.length} 个代理？`)) return;
+
+  toast(`正在执行批量${actionName(action)}...`);
+  const d = await api('/api/admin/proxies/batch', {
+    method: 'POST',
+    body: JSON.stringify({ action, ids })
+  });
+  if(d && d.error) toast(d.error, 'error');
+  else if(d && d.message) toast(d.message);
+  if(action === 'delete') selectedIds.clear();
+  setTimeout(refresh, 1000);
 }
 
 // --- Reusable Modal ---
