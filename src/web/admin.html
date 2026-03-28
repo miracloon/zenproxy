@@ -159,6 +159,9 @@ tr:hover td { background:rgba(108,99,255,.03); }
              <div class="btn-group">
                <button class="btn btn-primary" onclick="triggerValidation()">验证全部</button>
                <button class="btn btn-primary" onclick="triggerQualityCheck()">质检全部</button>
+               <button class="btn btn-success" onclick="batchEnableValid()">一键启用有效</button>
+               <button class="btn btn-warn" onclick="batchDisableInvalid()">一键禁用无效</button>
+               <button class="btn btn-primary" onclick="batchValidateDisabled()">验证未启用</button>
                <button class="btn btn-danger" onclick="cleanupProxies()">清理无效</button>
                <button class="btn btn-danger" onclick="cleanupUselessProxies()">清理三不通</button>
              </div>
@@ -252,6 +255,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
                         <th onclick="sortBy('type')">类型</th>
                         <th onclick="sortBy('server')">服务器</th>
                         <th onclick="sortBy('is_valid')">状态</th>
+                        <th onclick="sortBy('local_port')">端口</th>
                         <th onclick="sortBy('error_count')">错误</th>
                         <th>IP</th>
                         <th onclick="sortBy('country')">国家</th>
@@ -515,6 +519,7 @@ function renderProxies() {
       case 'type': va=a.type; vb=b.type; break;
       case 'server': va=a.server; vb=b.server; break;
       case 'is_valid': va=a.is_disabled?3:a.status==='valid'?0:a.status==='untested'?1:2; vb=b.is_disabled?3:b.status==='valid'?0:b.status==='untested'?1:2; break;
+      case 'local_port': va=a.local_port||99999; vb=b.local_port||99999; break;
       case 'error_count': va=a.error_count; vb=b.error_count; break;
       case 'country': va=a.quality&&a.quality.country?a.quality.country:'zzz'; vb=b.quality&&b.quality.country?b.quality.country:'zzz'; break;
       case 'risk': va=a.quality?a.quality.risk_score:2; vb=b.quality?b.quality.risk_score:2; break;
@@ -560,6 +565,7 @@ function renderProxies() {
       <td><span class="badge badge-type">${esc(p.type)}</span></td>
       <td title="${esc(p.server)}:${p.port}" style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${esc(p.server)}:${p.port}</td>
       <td>${statusBadge}</td>
+      <td>${p.local_port ? p.local_port : '<span style="color:var(--text-dim)">—</span>'}</td>
       <td>${p.error_count}</td>
       <td>${q&&q.ip_address?esc(q.ip_address):'-'}</td>
       <td>${q&&q.country?esc(q.country):'-'}</td>
@@ -743,8 +749,8 @@ async function loadUsers() {
     const isSelf = u.id === currentUser.id;
     const banBtn = isSelf ? '' : (u.is_banned ? `<button class="btn-xs btn-success" onclick="unbanUser('${esc(u.id)}')">解封</button>` : `<button class="btn-xs btn-warning" onclick="banUser('${esc(u.id)}')">封禁</button>`);
     const deleteBtn = canDelete(u) ? `<button class="btn-xs btn-danger" onclick="deleteUser('${esc(u.id)}')">删除</button>` : '';
-    const renameBtn = `<button class="btn-xs" onclick="promptRename('${esc(u.id)}', '${esc(u.username)}')">改名</button>`;
-    const pwdBtn = (u.auth_source === 'password') ? `<button class="btn-xs" onclick="promptResetPassword('${esc(u.id)}', '${esc(u.username)}')">重置密码</button>` : '';
+    const renameBtn = currentUser.role === 'super_admin' ? `<button class="btn-xs" onclick="showRenameModal('${esc(u.id)}', '${esc(u.username)}')">改名</button>` : '';
+    const pwdBtn = (u.auth_source === 'password' && currentUser.role === 'super_admin') ? `<button class="btn-xs" onclick="showResetPasswordModal('${esc(u.id)}', '${esc(u.username)}')">重置密码</button>` : '';
     
     return `<tr>
       <td>${esc(u.id.substring(0,8))}..</td>
@@ -783,20 +789,26 @@ async function deleteUser(id) { if(confirm('确定删除该用户？该操作不
 async function banUser(id) { if(confirm('确定封禁该用户？用户将被强制下线。')) { const d = await api('/api/admin/users/'+id+'/ban', {method:'POST'}); if(d && d.error) toast(d.error, 'error'); else toast('已封禁'); loadUsers(); } }
 async function unbanUser(id) { await api('/api/admin/users/'+id+'/unban', {method:'POST'}); toast('已解封'); loadUsers(); }
 
-async function promptRename(id, oldName) {
-  const newName = prompt('请输入新用户名:', oldName);
-  if(!newName || newName.trim() === oldName) return;
-  const d = await api('/api/admin/users/'+id+'/username', { method:'PUT', body: JSON.stringify({ username: newName.trim() }) });
-  if(d && d.error) toast(d.error, 'error');
-  else { toast('用户名已更新'); loadUsers(); }
+async function showRenameModal(id, oldName) {
+  showModal('修改用户名', [{id:'modal-rename', label:'新用户名', value:oldName}], async () => {
+    const newName = document.getElementById('modal-rename').value.trim();
+    if(!newName || newName === oldName) return;
+    const d = await api('/api/admin/users/'+id+'/username', { method:'PUT', body: JSON.stringify({ username: newName }) });
+    if(d && d.error) toast(d.error, 'error');
+    else { toast('用户名已更新'); loadUsers(); }
+    closeModal();
+  });
 }
 
-async function promptResetPassword(id, username) {
-  const newPwd = prompt(`为 "${username}" 设置新密码 (至少6位):`);
-  if(!newPwd || newPwd.length < 6) { if(newPwd !== null) toast('密码至少6位', 'error'); return; }
-  const d = await api('/api/admin/users/'+id+'/password', { method:'PUT', body: JSON.stringify({ password: newPwd }) });
-  if(d && d.error) toast(d.error, 'error');
-  else toast('密码已重置');
+async function showResetPasswordModal(id, username) {
+  showModal(`重置密码 — ${username}`, [{id:'modal-pwd', label:'新密码 (至少6位)', type:'password'}], async () => {
+    const newPwd = document.getElementById('modal-pwd').value;
+    if(!newPwd || newPwd.length < 6) { toast('密码至少6位', 'error'); return; }
+    const d = await api('/api/admin/users/'+id+'/password', { method:'PUT', body: JSON.stringify({ password: newPwd }) });
+    if(d && d.error) toast(d.error, 'error');
+    else toast('密码已重置');
+    closeModal();
+  });
 }
 
 async function createPasswordUser() {
@@ -862,6 +874,62 @@ async function saveLinuxDoSettings() {
     };
     const d = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(payload) });
     if(d && !d.error) { toast('✅ OAuth 设置已保存'); }
+}
+
+// --- Batch Operations ---
+async function batchEnableValid() {
+  toast('正在启用有效代理...');
+  const d = await api('/api/admin/proxies/enable-valid', { method: 'POST' });
+  if(d && d.error) toast(d.error, 'error');
+  else if(d) toast(d.message);
+  setTimeout(refresh, 1000);
+}
+
+async function batchDisableInvalid() {
+  toast('正在禁用无效代理...');
+  const d = await api('/api/admin/proxies/disable-invalid', { method: 'POST' });
+  if(d && d.error) toast(d.error, 'error');
+  else if(d) toast(d.message);
+  setTimeout(refresh, 1000);
+}
+
+async function batchValidateDisabled() {
+  toast('正在验证未启用代理...');
+  await api('/api/admin/proxies/validate-disabled', { method: 'POST' });
+}
+
+// --- Reusable Modal ---
+let _modalOnSubmit = null;
+function showModal(title, fields, onSubmit) {
+  _modalOnSubmit = onSubmit;
+  let existing = document.getElementById('zen-modal');
+  if (existing) existing.remove();
+  const html = `
+    <div id="zen-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:1000;animation:slideIn .2s ease" onclick="if(event.target===this)closeModal()">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;width:380px;max-width:90vw">
+        <h3 style="color:var(--text-bright);margin-bottom:18px;font-size:16px">${title}</h3>
+        ${fields.map(f => `
+          <div class="form-group">
+            <label>${f.label||''}</label>
+            <input id="${f.id}" type="${f.type||'text'}" value="${f.value||''}" style="width:100%;padding:10px 12px;background:#0f1117;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none">
+          </div>
+        `).join('')}
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+          <button class="btn btn-sm" onclick="closeModal()" style="background:var(--border);color:var(--text)">取消</button>
+          <button class="btn btn-primary btn-sm" onclick="_modalOnSubmit&&_modalOnSubmit()">确认</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  // Focus first field
+  const firstField = fields[0];
+  if(firstField) { const el = document.getElementById(firstField.id); if(el) { el.focus(); el.select(); } }
+}
+
+function closeModal() {
+  const m = document.getElementById('zen-modal');
+  if(m) m.remove();
+  _modalOnSubmit = null;
 }
 
 window.onload = init;

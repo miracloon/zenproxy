@@ -90,6 +90,17 @@ tr:hover td { background:rgba(108,99,255,.03); }
 .pagination button.active { background:var(--primary); border-color:var(--primary); color:#fff; }
 .pagination button:disabled { opacity:.4; cursor:default; }
 .pagination .page-info { font-size:13px; color:var(--text-dim); margin:0 8px; }
+
+/* Dropdown menu */
+.dropdown { position:relative; display:inline-block; }
+.dropdown-trigger { cursor:pointer; padding:6px 12px; border-radius:6px; transition:all .2s; color:var(--text-bright); font-weight:500; }
+.dropdown-trigger:hover { background:rgba(108,99,255,.1); }
+.dropdown-menu { display:none; position:absolute; right:0; top:100%; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:6px; min-width:160px; z-index:100; margin-top:4px; box-shadow:0 4px 12px rgba(0,0,0,.3); }
+.dropdown.open .dropdown-menu { display:block; }
+.dropdown-item { display:block; padding:8px 14px; border-radius:6px; font-size:13px; color:var(--text); cursor:pointer; transition:all .15s; border:none; background:none; width:100%; text-align:left; }
+.dropdown-item:hover { background:rgba(108,99,255,.1); color:var(--primary); }
+.dropdown-item.danger { color:var(--danger); }
+.dropdown-item.danger:hover { background:rgba(239,68,68,.1); }
 </style>
 </head>
 <body>
@@ -136,15 +147,18 @@ tr:hover td { background:rgba(108,99,255,.03); }
 <div id="app" style="display:none">
 <div class="header">
   <h1>ZenProxy</h1>
-  <div class="nav">
-    <a href="/" class="active">仪表盘</a>
-    <a href="/admin" id="admin-link" style="display:none">管理后台</a>
-    <a href="/docs">API 文档</a>
-    <div class="user-info">
-      <span class="username" id="header-username"></span>
-      <a href="javascript:void(0)" onclick="doLogout()" style="color:var(--danger)">退出登录</a>
+    <div class="nav">
+      <a href="/" class="active">仪表盘</a>
+      <a href="/admin" id="admin-link" style="display:none">管理后台</a>
+      <a href="/docs">API 文档</a>
+      <div class="dropdown" id="user-dropdown">
+        <span class="dropdown-trigger" onclick="toggleDropdown()" id="header-username"></span>
+        <div class="dropdown-menu">
+          <button class="dropdown-item" id="pwd-change-btn" style="display:none" onclick="showChangePasswordModal()">🔒 修改密码</button>
+          <button class="dropdown-item danger" onclick="doLogout()">🚪 退出登录</button>
+        </div>
+      </div>
     </div>
-  </div>
 </div>
 
 <div class="container">
@@ -211,6 +225,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
           <th onclick="sortBy('type')">类型</th>
           <th onclick="sortBy('server')">服务器</th>
           <th onclick="sortBy('is_valid')">状态</th>
+          <th onclick="sortBy('local_port')">端口</th>
           <th>IP</th>
           <th onclick="sortBy('country')">国家</th>
           <th>IP类型</th>
@@ -322,6 +337,9 @@ async function checkAuth() {
     if (currentUser.role !== 'user') {
       document.getElementById('admin-link').style.display = '';
     }
+    if (currentUser.auth_source === 'password') {
+      document.getElementById('pwd-change-btn').style.display = '';
+    }
     if (currentUser.username === 'admin' && currentUser.auth_source === 'password') {
       const banner = document.createElement('div');
       banner.className = 'warning-banner';
@@ -406,6 +424,7 @@ function renderProxies() {
       case 'type': va = a.type; vb = b.type; break;
       case 'server': va = a.server; vb = b.server; break;
       case 'is_valid': va = a.status==='valid'?0:a.status==='untested'?1:2; vb = b.status==='valid'?0:b.status==='untested'?1:2; break;
+      case 'local_port': va = a.local_port||99999; vb = b.local_port||99999; break;
       case 'country': va = a.quality && a.quality.country ? a.quality.country : 'zzz'; vb = b.quality && b.quality.country ? b.quality.country : 'zzz'; break;
       case 'risk': va = a.quality ? a.quality.risk_score : 2; vb = b.quality ? b.quality.risk_score : 2; break;
       default: va = a.name; vb = b.name;
@@ -441,6 +460,7 @@ function renderProxies() {
       <td><span class="badge badge-type">${esc(p.type)}</span></td>
       <td>${esc(p.server)}:${p.port}</td>
       <td>${p.status==='valid'?'<span class="badge badge-valid">有效</span>':p.status==='untested'?'<span class="badge badge-untested">待检测</span>':'<span class="badge badge-invalid">无效</span>'}</td>
+      <td>${p.local_port ? p.local_port : '<span style="color:var(--text-dim)">—</span>'}</td>
       <td>${q && q.ip_address ? esc(q.ip_address) : '-'}</td>
       <td>${q && q.country ? esc(q.country) : '-'}</td>
       <td>${q && q.ip_type ? esc(q.ip_type) : '-'}</td>
@@ -631,6 +651,55 @@ async function doRegister() {
 }
 
 function refresh() { loadProxies(); }
+
+function toggleDropdown() {
+  document.getElementById('user-dropdown').classList.toggle('open');
+}
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+  const dd = document.getElementById('user-dropdown');
+  if(dd && !dd.contains(e.target)) dd.classList.remove('open');
+});
+
+function showChangePasswordModal() {
+  document.getElementById('user-dropdown').classList.remove('open');
+  let existing = document.getElementById('zen-modal');
+  if (existing) existing.remove();
+  const html = `
+    <div id="zen-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:1000" onclick="if(event.target===this)document.getElementById('zen-modal').remove()">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;width:380px;max-width:90vw">
+        <h3 style="color:var(--text-bright);margin-bottom:18px;font-size:16px">🔒 修改密码</h3>
+        <div class="form-group"><label>当前密码</label><input id="cpwd-old" type="password"></div>
+        <div class="form-group"><label>新密码</label><input id="cpwd-new" type="password"></div>
+        <div class="form-group"><label>确认新密码</label><input id="cpwd-confirm" type="password"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+          <button class="btn btn-sm" onclick="document.getElementById('zen-modal').remove()" style="background:var(--border);color:var(--text)">取消</button>
+          <button class="btn btn-primary btn-sm" onclick="doChangePassword()">确认</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  document.getElementById('cpwd-old').focus();
+}
+
+async function doChangePassword() {
+  const oldPwd = document.getElementById('cpwd-old').value;
+  const newPwd = document.getElementById('cpwd-new').value;
+  const confirm = document.getElementById('cpwd-confirm').value;
+  if(!oldPwd || !newPwd) { toast('请填写完整'); return; }
+  if(newPwd !== confirm) { toast('两次新密码不一致', 'error'); return; }
+  if(newPwd.length < 6) { toast('新密码至少6位', 'error'); return; }
+  try {
+    const r = await fetch('/api/auth/password', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_password: oldPwd, new_password: newPwd })
+    });
+    const d = await r.json();
+    if(r.ok) { toast('密码修改成功'); document.getElementById('zen-modal').remove(); }
+    else toast(d.error || '修改失败', 'error');
+  } catch(e) { toast('错误: ' + e.message, 'error'); }
+}
 checkAuth();
 loadAuthOptions();
 setInterval(() => { if (currentUser) refresh(); }, 15000);
