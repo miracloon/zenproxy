@@ -9,7 +9,6 @@ pub enum ProxyStatus {
     Untested,
     Valid,
     Invalid,
-    Disabled,
 }
 
 impl ProxyStatus {
@@ -19,7 +18,6 @@ impl ProxyStatus {
             ProxyStatus::Valid => 0,
             ProxyStatus::Untested => 1,
             ProxyStatus::Invalid => 2,
-            ProxyStatus::Disabled => 3,
         }
     }
 }
@@ -103,10 +101,7 @@ impl ProxyPool {
             let quality = quality_map.get(&row.id).map(|q| ProxyQualityInfo::from(q.clone()));
             let outbound: serde_json::Value =
                 serde_json::from_str(&row.config_json).unwrap_or_default();
-            // Derive state: disabled first, then validation status
-            let status = if row.is_disabled {
-                ProxyStatus::Disabled
-            } else if row.is_valid {
+            let status = if row.is_valid {
                 ProxyStatus::Valid
             } else if row.last_validated.is_some() {
                 ProxyStatus::Invalid
@@ -162,7 +157,7 @@ impl ProxyPool {
             match status {
                 ProxyStatus::Valid => proxy.error_count = 0,
                 ProxyStatus::Invalid => proxy.error_count += 1,
-                ProxyStatus::Untested | ProxyStatus::Disabled => {}
+                ProxyStatus::Untested => {}
             }
         }
     }
@@ -202,12 +197,6 @@ impl ProxyPool {
     pub fn set_disabled(&self, id: &str, disabled: bool) {
         if let Some(mut proxy) = self.proxies.get_mut(id) {
             proxy.is_disabled = disabled;
-            if disabled {
-                proxy.status = ProxyStatus::Disabled;
-            } else {
-                // Restore to Untested — will be re-validated
-                proxy.status = ProxyStatus::Untested;
-            }
         }
     }
 
@@ -316,4 +305,97 @@ pub struct ProxyFilter {
     pub proxy_type: Option<String>,
     pub count: Option<usize>,
     pub proxy_id: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::ProxyRow;
+    use std::path::Path;
+
+    fn sample_pool_proxy(status: ProxyStatus, is_disabled: bool) -> PoolProxy {
+        PoolProxy {
+            id: "proxy-1".to_string(),
+            subscription_id: "sub-1".to_string(),
+            name: "Proxy 1".to_string(),
+            proxy_type: "vmess".to_string(),
+            server: "example.com".to_string(),
+            port: 443,
+            singbox_outbound: serde_json::json!({}),
+            status,
+            local_port: None,
+            error_count: 0,
+            quality: None,
+            is_disabled,
+        }
+    }
+
+    fn sample_proxy_row(
+        id: &str,
+        is_valid: bool,
+        last_validated: Option<&str>,
+        is_disabled: bool,
+    ) -> ProxyRow {
+        ProxyRow {
+            id: id.to_string(),
+            subscription_id: "sub-1".to_string(),
+            name: format!("Proxy {id}"),
+            proxy_type: "vmess".to_string(),
+            server: "example.com".to_string(),
+            port: 443,
+            config_json: "{}".to_string(),
+            is_valid,
+            local_port: None,
+            error_count: 0,
+            last_error: None,
+            last_validated: last_validated.map(str::to_string),
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            updated_at: "2026-03-28T00:00:00Z".to_string(),
+            is_disabled,
+            disabled_at: is_disabled.then(|| "2026-03-28T00:00:00Z".to_string()),
+        }
+    }
+
+    #[test]
+    fn set_disabled_preserves_existing_validation_status() {
+        let pool = ProxyPool::new();
+        pool.add(sample_pool_proxy(ProxyStatus::Valid, false));
+
+        pool.set_disabled("proxy-1", true);
+        let disabled = pool.get("proxy-1").expect("proxy should exist");
+        assert!(disabled.is_disabled);
+        assert_eq!(disabled.status, ProxyStatus::Valid);
+
+        pool.set_disabled("proxy-1", false);
+        let enabled = pool.get("proxy-1").expect("proxy should exist");
+        assert!(!enabled.is_disabled);
+        assert_eq!(enabled.status, ProxyStatus::Valid);
+    }
+
+    #[test]
+    fn load_from_db_keeps_validation_status_for_disabled_rows() {
+        let db = Database::new(Path::new(":memory:")).expect("in-memory db should initialize");
+        db.insert_proxy(&sample_proxy_row("valid-disabled", true, None, true))
+            .expect("valid disabled row should insert");
+        db.insert_proxy(&sample_proxy_row(
+            "invalid-disabled",
+            false,
+            Some("2026-03-28T00:00:00Z"),
+            true,
+        ))
+        .expect("invalid disabled row should insert");
+
+        let pool = ProxyPool::new();
+        pool.load_from_db(&db);
+
+        let valid_disabled = pool.get("valid-disabled").expect("valid proxy should load");
+        assert!(valid_disabled.is_disabled);
+        assert_eq!(valid_disabled.status, ProxyStatus::Valid);
+
+        let invalid_disabled = pool
+            .get("invalid-disabled")
+            .expect("invalid proxy should load");
+        assert!(invalid_disabled.is_disabled);
+        assert_eq!(invalid_disabled.status, ProxyStatus::Invalid);
+    }
 }

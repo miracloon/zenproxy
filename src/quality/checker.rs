@@ -41,25 +41,105 @@ pub async fn check_all(state: Arc<AppState>) -> Result<usize, String> {
     let now = chrono::Utc::now();
     let mut total_checked = 0usize;
     let rate_limiter = Arc::new(RateLimiter::new(40));
+    let mut remaining_budget = MAX_QUALITY_CHECKS_PER_RUN;
 
-    // Only quality-check enabled + valid + has-port proxies
+    // Quality-check all valid proxies that already have an active port.
     let mut to_check: Vec<PoolProxy> = state
         .pool
         .get_all()
         .into_iter()
-        .filter(|p| !p.is_disabled && p.status == crate::pool::manager::ProxyStatus::Valid && p.local_port.is_some())
+        .filter(|p| p.status == crate::pool::manager::ProxyStatus::Valid && p.local_port.is_some())
         .filter(|p| needs_quality_check(p, &now))
         .collect();
 
     if !to_check.is_empty() {
-        if to_check.len() > MAX_QUALITY_CHECKS_PER_RUN {
-            to_check.truncate(MAX_QUALITY_CHECKS_PER_RUN);
+        if to_check.len() > remaining_budget {
+            to_check.truncate(remaining_budget);
         }
         tracing::info!(
             "Quality check: checking {} proxies this run (limit={MAX_QUALITY_CHECKS_PER_RUN})",
             to_check.len()
         );
         total_checked += check_batch(&to_check, &state, &rate_limiter).await;
+        remaining_budget = remaining_budget.saturating_sub(to_check.len());
+    }
+
+    if remaining_budget > 0 {
+        let mut disabled_valid: Vec<PoolProxy> = state
+            .pool
+            .get_all()
+            .into_iter()
+            .filter(|p| {
+                p.is_disabled
+                    && p.status == crate::pool::manager::ProxyStatus::Valid
+                    && p.local_port.is_none()
+            })
+            .filter(|p| needs_quality_check(p, &now))
+            .collect();
+
+        if disabled_valid.len() > remaining_budget {
+            disabled_valid.truncate(remaining_budget);
+        }
+
+        if !disabled_valid.is_empty() {
+            let batch_size = 10;
+            for batch in disabled_valid.chunks(batch_size) {
+                let mut temp_assignments: Vec<(PoolProxy, u16)> = Vec::new();
+                {
+                    let mut mgr = state.singbox.lock().await;
+                    for proxy in batch {
+                        let remembered_port = proxy.local_port.or_else(|| {
+                            state.db.get_all_proxies().ok().and_then(|rows| {
+                                rows.into_iter()
+                                    .find(|row| row.id == proxy.id)
+                                    .and_then(|row| row.local_port.map(|port| port as u16))
+                            })
+                        });
+
+                        let result = if let Some(port) = remembered_port {
+                            mgr.create_binding_on_port(&proxy.id, port, &proxy.singbox_outbound)
+                                .await
+                        } else {
+                            mgr.create_binding(&proxy.id, &proxy.singbox_outbound).await
+                        };
+
+                        match result {
+                            Ok(port) => temp_assignments.push((proxy.clone(), port)),
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Quality check temp binding failed for {}: {e}",
+                                    proxy.name
+                                );
+                            }
+                        }
+                    }
+                }
+
+                if temp_assignments.is_empty() {
+                    continue;
+                }
+
+                for (proxy, port) in &temp_assignments {
+                    state.pool.set_local_port(&proxy.id, *port);
+                }
+
+                let to_check_with_ports: Vec<_> = temp_assignments
+                    .iter()
+                    .map(|(proxy, port)| {
+                        let mut proxy = proxy.clone();
+                        proxy.local_port = Some(*port);
+                        proxy
+                    })
+                    .collect();
+                total_checked += check_batch(&to_check_with_ports, &state, &rate_limiter).await;
+
+                let mut mgr = state.singbox.lock().await;
+                for (proxy, port) in &temp_assignments {
+                    mgr.remove_binding(&proxy.id, *port).await.ok();
+                    state.pool.clear_local_port(&proxy.id);
+                }
+            }
+        }
     }
 
     if total_checked > 0 {
@@ -84,6 +164,19 @@ pub(crate) async fn check_single_proxy(state: &Arc<AppState>, proxy_id: &str) ->
 
     match check_single(&proxy_addr, &proxy, &rate_limiter).await {
         Ok(quality) => {
+            if all_quality_probes_failed(&quality) {
+                let reason = "Quality check: all probes failed, proxy likely unreachable";
+                state
+                    .pool
+                    .set_status(&proxy.id, crate::pool::manager::ProxyStatus::Invalid);
+                state
+                    .db
+                    .update_proxy_validation(&proxy.id, false, Some(reason))
+                    .ok();
+                tracing::warn!("Single quality check all probes failed for {}", proxy.id);
+                return Err("All quality probes failed, proxy likely unreachable".into());
+            }
+
             let db_quality = ProxyQuality {
                 proxy_id: proxy.id.clone(),
                 ip_address: quality.ip_address.clone(),
@@ -133,6 +226,22 @@ async fn check_batch(
             let proxy_addr = format!("http://127.0.0.1:{local_port}");
             match check_single(&proxy_addr, &proxy, &rl).await {
                 Ok(quality) => {
+                    if all_quality_probes_failed(&quality) {
+                        let reason = "Quality check: all probes failed, proxy likely unreachable";
+                        state
+                            .pool
+                            .set_status(&proxy.id, crate::pool::manager::ProxyStatus::Invalid);
+                        state
+                            .db
+                            .update_proxy_validation(&proxy.id, false, Some(reason))
+                            .ok();
+                        tracing::warn!(
+                            "All quality probes failed for {}, marking Invalid",
+                            proxy.name
+                        );
+                        return;
+                    }
+
                     let is_incomplete = quality_is_incomplete(&quality);
                     let incomplete_retry_count = if is_incomplete {
                         proxy
@@ -229,6 +338,10 @@ fn quality_is_incomplete(q: &ProxyQualityInfo) -> bool {
     q.country.is_none() || q.ip_type.is_none() || q.ip_address.is_none() || q.risk_level == "Unknown"
 }
 
+fn all_quality_probes_failed(q: &ProxyQualityInfo) -> bool {
+    q.ip_address.is_none() && !q.google_accessible && !q.chatgpt_accessible
+}
+
 /// IP info from ip-api.com (primary source — free, no key, auto-detects caller IP)
 struct IpApiResult {
     ip: Option<String>,
@@ -316,6 +429,38 @@ async fn rate_limited_ip_api(
 ) -> Option<IpApiResult> {
     rate_limiter.wait().await;
     query_ip_api(client).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_quality(
+        ip_address: Option<&str>,
+        google_accessible: bool,
+        chatgpt_accessible: bool,
+    ) -> ProxyQualityInfo {
+        ProxyQualityInfo {
+            ip_address: ip_address.map(str::to_string),
+            country: None,
+            ip_type: None,
+            is_residential: false,
+            chatgpt_accessible,
+            google_accessible,
+            risk_score: 0.0,
+            risk_level: "Unknown".to_string(),
+            checked_at: None,
+            incomplete_retry_count: 0,
+        }
+    }
+
+    #[test]
+    fn all_quality_probes_failed_only_when_every_probe_is_empty() {
+        assert!(all_quality_probes_failed(&sample_quality(None, false, false)));
+        assert!(!all_quality_probes_failed(&sample_quality(Some("1.1.1.1"), false, false)));
+        assert!(!all_quality_probes_failed(&sample_quality(None, true, false)));
+        assert!(!all_quality_probes_failed(&sample_quality(None, false, true)));
+    }
 }
 
 /// Query ip-api.com — auto-detects caller IP, returns IP/country/proxy/hosting.

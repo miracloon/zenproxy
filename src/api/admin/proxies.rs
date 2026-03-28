@@ -5,6 +5,12 @@ use axum::Json;
 use serde_json::json;
 use std::sync::Arc;
 
+#[derive(serde::Deserialize)]
+pub struct BatchRequest {
+    action: String,
+    ids: Vec<String>,
+}
+
 pub async fn list_proxies(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
@@ -148,63 +154,15 @@ pub async fn validate_single_proxy(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let proxy = state.pool.get(&id)
+    state
+        .pool
+        .get(&id)
         .ok_or_else(|| AppError::NotFound("Proxy not found".into()))?;
-
-    if proxy.is_disabled {
-        return Err(AppError::BadRequest("Cannot validate a disabled proxy".into()));
-    }
 
     let state_clone = state.clone();
     let proxy_id = id.clone();
     tokio::spawn(async move {
-        let validation_url = state_clone.db.get_setting("validation_url")
-            .ok().flatten()
-            .unwrap_or_else(|| state_clone.config.validation.url.clone());
-        let timeout = std::time::Duration::from_secs(
-            state_clone.db.get_setting("validation_timeout_secs")
-                .ok().flatten().and_then(|v| v.parse().ok())
-                .unwrap_or(state_clone.config.validation.timeout_secs)
-        );
-
-        // Get or create binding
-        let (local_port, temp_binding) = match state_clone.pool.get(&proxy_id) {
-            Some(p) if p.local_port.is_some() => (p.local_port.unwrap(), false),
-            Some(p) => {
-                let mut mgr = state_clone.singbox.lock().await;
-                match mgr.create_binding(&proxy_id, &p.singbox_outbound).await {
-                    Ok(port) => (port, true),
-                    Err(e) => {
-                        tracing::error!("Failed to create temp binding for {}: {e}", proxy_id);
-                        return;
-                    }
-                }
-            }
-            None => return,
-        };
-
-        // Run validation
-        let proxy_addr = format!("http://127.0.0.1:{local_port}");
-        let result = validate_through_proxy(&proxy_addr, &validation_url, timeout).await;
-
-        match result {
-            Ok(()) => {
-                state_clone.pool.set_status(&proxy_id, crate::pool::manager::ProxyStatus::Valid);
-                state_clone.db.update_proxy_validation(&proxy_id, true, None).ok();
-                tracing::info!("Single validation OK: {}", proxy_id);
-            }
-            Err(e) => {
-                state_clone.pool.set_status(&proxy_id, crate::pool::manager::ProxyStatus::Invalid);
-                state_clone.db.update_proxy_validation(&proxy_id, false, Some(&e)).ok();
-                tracing::info!("Single validation FAILED: {} — {e}", proxy_id);
-            }
-        }
-
-        // Cleanup temp binding
-        if temp_binding {
-            let mut mgr = state_clone.singbox.lock().await;
-            mgr.remove_binding(&proxy_id, local_port).await.ok();
-        }
+        run_single_validation(state_clone, proxy_id).await;
     });
 
     Ok(Json(json!({ "message": "Validation started for proxy" })))
@@ -236,6 +194,144 @@ async fn validate_through_proxy(
     }
 }
 
+fn remembered_proxy_port(db: &crate::db::Database, proxy_id: &str) -> Option<u16> {
+    db.get_all_proxies()
+        .ok()
+        .and_then(|rows| {
+            rows.into_iter()
+                .find(|row| row.id == proxy_id)
+                .and_then(|row| row.local_port.map(|port| port as u16))
+        })
+}
+
+async fn ensure_proxy_binding(
+    state: &Arc<AppState>,
+    proxy: &crate::pool::manager::PoolProxy,
+    sync_pool_port: bool,
+) -> Result<(u16, bool), String> {
+    if let Some(port) = proxy.local_port {
+        return Ok((port, false));
+    }
+
+    let remembered_port = remembered_proxy_port(&state.db, &proxy.id);
+    let mut mgr = state.singbox.lock().await;
+    let local_port = match remembered_port {
+        Some(port) => mgr
+            .create_binding_on_port(&proxy.id, port, &proxy.singbox_outbound)
+            .await?,
+        None => mgr.create_binding(&proxy.id, &proxy.singbox_outbound).await?,
+    };
+
+    if sync_pool_port {
+        state.pool.set_local_port(&proxy.id, local_port);
+    }
+
+    Ok((local_port, true))
+}
+
+async fn cleanup_temp_binding(
+    state: &Arc<AppState>,
+    proxy_id: &str,
+    local_port: u16,
+    clear_pool_port: bool,
+) {
+    if clear_pool_port {
+        state.pool.clear_local_port(proxy_id);
+    }
+
+    let mut mgr = state.singbox.lock().await;
+    mgr.remove_binding(proxy_id, local_port).await.ok();
+}
+
+async fn run_single_validation(state: Arc<AppState>, proxy_id: String) {
+    let validation_url = state
+        .db
+        .get_setting("validation_url")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| state.config.validation.url.clone());
+    let timeout = std::time::Duration::from_secs(
+        state
+            .db
+            .get_setting("validation_timeout_secs")
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(state.config.validation.timeout_secs),
+    );
+
+    let Some(proxy) = state.pool.get(&proxy_id) else {
+        return;
+    };
+
+    let (local_port, temp_binding) = match ensure_proxy_binding(&state, &proxy, false).await {
+        Ok(binding) => binding,
+        Err(e) => {
+            tracing::error!("Failed to create temp binding for {}: {e}", proxy_id);
+            return;
+        }
+    };
+
+    let proxy_addr = format!("http://127.0.0.1:{local_port}");
+    let result = validate_through_proxy(&proxy_addr, &validation_url, timeout).await;
+
+    match result {
+        Ok(()) => {
+            state
+                .pool
+                .set_status(&proxy_id, crate::pool::manager::ProxyStatus::Valid);
+            state.db.update_proxy_validation(&proxy_id, true, None).ok();
+            tracing::info!("Single validation OK: {}", proxy_id);
+        }
+        Err(e) => {
+            state
+                .pool
+                .set_status(&proxy_id, crate::pool::manager::ProxyStatus::Invalid);
+            state
+                .db
+                .update_proxy_validation(&proxy_id, false, Some(&e))
+                .ok();
+            tracing::info!("Single validation FAILED: {} — {e}", proxy_id);
+        }
+    }
+
+    if temp_binding {
+        cleanup_temp_binding(&state, &proxy_id, local_port, false).await;
+    }
+}
+
+async fn run_single_quality_check(state: Arc<AppState>, proxy_id: String) {
+    let Some(proxy) = state.pool.get(&proxy_id) else {
+        return;
+    };
+
+    if proxy.status != crate::pool::manager::ProxyStatus::Valid {
+        tracing::warn!("Skipping single quality check for non-valid proxy {}", proxy_id);
+        return;
+    }
+
+    let (local_port, temp_binding) = match ensure_proxy_binding(&state, &proxy, true).await {
+        Ok(binding) => binding,
+        Err(e) => {
+            tracing::error!("Temp binding for quality check failed: {e}");
+            return;
+        }
+    };
+
+    if temp_binding {
+        state.pool.set_local_port(&proxy_id, local_port);
+    }
+
+    match crate::quality::checker::check_single_proxy(&state, &proxy_id).await {
+        Ok(()) => tracing::info!("Single quality check OK: {proxy_id}"),
+        Err(e) => tracing::warn!("Single quality check failed for {proxy_id}: {e}"),
+    }
+
+    if temp_binding {
+        cleanup_temp_binding(&state, &proxy_id, local_port, true).await;
+    }
+}
+
 pub async fn quality_check_single_proxy(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -243,9 +339,6 @@ pub async fn quality_check_single_proxy(
     let proxy = state.pool.get(&id)
         .ok_or_else(|| AppError::NotFound("Proxy not found".into()))?;
 
-    if proxy.is_disabled {
-        return Err(AppError::BadRequest("Cannot quality-check a disabled proxy".into()));
-    }
     if proxy.status != crate::pool::manager::ProxyStatus::Valid {
         return Err(AppError::BadRequest("Proxy must be valid before quality check".into()));
     }
@@ -253,34 +346,7 @@ pub async fn quality_check_single_proxy(
     let state_clone = state.clone();
     let proxy_id = id.clone();
     tokio::spawn(async move {
-        // Ensure binding exists
-        let temp_binding = if state_clone.pool.get(&proxy_id).map(|p| p.local_port.is_none()).unwrap_or(true) {
-            if let Some(p) = state_clone.pool.get(&proxy_id) {
-                let mut mgr = state_clone.singbox.lock().await;
-                match mgr.create_binding(&proxy_id, &p.singbox_outbound).await {
-                    Ok(port) => {
-                        state_clone.pool.set_local_port(&proxy_id, port);
-                        Some(port)
-                    }
-                    Err(e) => {
-                        tracing::error!("Temp binding for quality check failed: {e}");
-                        return;
-                    }
-                }
-            } else { return; }
-        } else { None };
-
-        match crate::quality::checker::check_single_proxy(&state_clone, &proxy_id).await {
-            Ok(()) => tracing::info!("Single quality check OK: {proxy_id}"),
-            Err(e) => tracing::warn!("Single quality check failed for {proxy_id}: {e}"),
-        }
-
-        // Cleanup temp binding
-        if let Some(port) = temp_binding {
-            state_clone.pool.clear_local_port(&proxy_id);
-            let mut mgr = state_clone.singbox.lock().await;
-            mgr.remove_binding(&proxy_id, port).await.ok();
-        }
+        run_single_quality_check(state_clone, proxy_id).await;
     });
 
     Ok(Json(json!({ "message": "Quality check started for proxy" })))
@@ -294,30 +360,11 @@ pub async fn batch_enable_valid(
         return Err(AppError::Conflict("验证进行中，请稍后操作".into()));
     }
 
-    let targets: Vec<String> = state.pool.get_all()
+    let all_targets: Vec<String> = state.pool.get_all()
         .iter()
         .filter(|p| p.is_disabled && p.status == crate::pool::manager::ProxyStatus::Valid)
         .map(|p| p.id.clone())
         .collect();
-
-    // Also include Disabled status that were previously validated as valid in DB
-    let db_targets: Vec<String> = state.pool.get_all()
-        .iter()
-        .filter(|p| p.is_disabled && p.status == crate::pool::manager::ProxyStatus::Disabled)
-        .filter(|p| {
-            // Check DB for is_valid flag
-            state.db.get_all_proxies().ok()
-                .and_then(|rows| rows.into_iter().find(|r| r.id == p.id))
-                .map(|r| r.is_valid)
-                .unwrap_or(false)
-        })
-        .map(|p| p.id.clone())
-        .collect();
-
-    let mut all_targets: Vec<String> = targets;
-    all_targets.extend(db_targets);
-    all_targets.sort();
-    all_targets.dedup();
 
     let count = all_targets.len();
     for id in &all_targets {
@@ -387,4 +434,178 @@ pub async fn batch_validate_disabled(
     Ok(Json(json!({
         "message": "已开始验证禁用代理",
     })))
+}
+
+pub async fn batch_validate_invalid(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        if let Err(e) = crate::pool::validator::validate_invalid_only(state_clone).await {
+            tracing::error!("Batch validate-invalid failed: {e}");
+        }
+    });
+
+    Ok(Json(json!({
+        "message": "已开始验证无效代理",
+    })))
+}
+
+pub async fn batch_proxy_action(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<BatchRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if state.validation_lock.try_lock().is_err()
+        && matches!(req.action.as_str(), "enable" | "disable")
+    {
+        return Err(AppError::Conflict("验证进行中，请稍后操作".into()));
+    }
+
+    let proxies: Vec<_> = req
+        .ids
+        .iter()
+        .filter_map(|id| state.pool.get(id))
+        .collect();
+    let total = proxies.len();
+
+    match req.action.as_str() {
+        "enable" => {
+            let targets: Vec<_> = proxies.into_iter().filter(|p| p.is_disabled).collect();
+            let processed = targets.len();
+            for proxy in &targets {
+                state.pool.set_disabled(&proxy.id, false);
+                state.db.set_proxy_disabled(&proxy.id, false).ok();
+            }
+            if processed > 0 {
+                let state2 = state.clone();
+                tokio::spawn(async move {
+                    crate::api::subscription::sync_proxy_bindings(&state2).await;
+                });
+            }
+            Ok(Json(json!({
+                "action": "enable",
+                "total": total,
+                "processed": processed,
+                "skipped": total - processed,
+                "message": format!("已启用 {} 个，跳过 {} 个(已启用)", processed, total - processed),
+            })))
+        }
+        "disable" => {
+            let targets: Vec<_> = proxies.into_iter().filter(|p| !p.is_disabled).collect();
+            let processed = targets.len();
+            for proxy in &targets {
+                state.pool.set_disabled(&proxy.id, true);
+                state.db.set_proxy_disabled(&proxy.id, true).ok();
+                if let Some(port) = proxy.local_port {
+                    let mut mgr = state.singbox.lock().await;
+                    mgr.remove_binding(&proxy.id, port).await.ok();
+                    state.pool.clear_local_port(&proxy.id);
+                }
+            }
+            Ok(Json(json!({
+                "action": "disable",
+                "total": total,
+                "processed": processed,
+                "skipped": total - processed,
+                "message": format!("已禁用 {} 个，跳过 {} 个(已禁用)", processed, total - processed),
+            })))
+        }
+        "validate" => {
+            let ids = req.ids.clone();
+            let state2 = state.clone();
+            tokio::spawn(async move {
+                for id in ids {
+                    run_single_validation(state2.clone(), id).await;
+                }
+            });
+            Ok(Json(json!({
+                "action": "validate",
+                "total": total,
+                "processed": total,
+                "skipped": 0,
+                "message": format!("已启动 {} 个代理的连通测试", total),
+            })))
+        }
+        "quality" => {
+            let targets: Vec<_> = proxies
+                .iter()
+                .filter(|p| p.status == crate::pool::manager::ProxyStatus::Valid)
+                .map(|p| p.id.clone())
+                .collect();
+            let processed = targets.len();
+            let skipped = total - processed;
+            let state2 = state.clone();
+            tokio::spawn(async move {
+                for id in targets {
+                    run_single_quality_check(state2.clone(), id).await;
+                }
+            });
+            Ok(Json(json!({
+                "action": "quality",
+                "total": total,
+                "processed": processed,
+                "skipped": skipped,
+                "message": format!("已启动 {} 个代理的质检，跳过 {} 个(非有效)", processed, skipped),
+            })))
+        }
+        "delete" => {
+            for proxy in &proxies {
+                if let Some(port) = proxy.local_port {
+                    let mut mgr = state.singbox.lock().await;
+                    mgr.remove_binding(&proxy.id, port).await.ok();
+                }
+                state.pool.remove(&proxy.id);
+                state.db.delete_proxy(&proxy.id).ok();
+            }
+            Ok(Json(json!({
+                "action": "delete",
+                "total": total,
+                "processed": total,
+                "skipped": 0,
+                "message": format!("已删除 {} 个代理", total),
+            })))
+        }
+        _ => Err(AppError::BadRequest("Unknown batch action".into())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remembered_proxy_port;
+    use crate::db::{Database, ProxyRow};
+    use std::path::Path;
+
+    fn sample_proxy_row(id: &str, local_port: Option<i32>) -> ProxyRow {
+        ProxyRow {
+            id: id.to_string(),
+            subscription_id: "sub-1".to_string(),
+            name: format!("Proxy {id}"),
+            proxy_type: "vmess".to_string(),
+            server: "example.com".to_string(),
+            port: 443,
+            config_json: "{}".to_string(),
+            is_valid: false,
+            local_port,
+            error_count: 0,
+            last_error: None,
+            last_validated: None,
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            updated_at: "2026-03-28T00:00:00Z".to_string(),
+            is_disabled: false,
+            disabled_at: None,
+        }
+    }
+
+    #[test]
+    fn remembered_proxy_port_reads_saved_port_from_db() {
+        let db = Database::new(Path::new(":memory:")).expect("in-memory db should initialize");
+        db.insert_proxy(&sample_proxy_row("with-port", Some(61001)))
+            .expect("proxy row should insert");
+        db.insert_proxy(&sample_proxy_row("without-port", None))
+            .expect("proxy row should insert");
+
+        assert_eq!(remembered_proxy_port(&db, "with-port"), Some(61001));
+        assert_eq!(remembered_proxy_port(&db, "without-port"), None);
+        assert_eq!(remembered_proxy_port(&db, "missing"), None);
+    }
 }
