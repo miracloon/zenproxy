@@ -285,3 +285,106 @@ pub async fn quality_check_single_proxy(
 
     Ok(Json(json!({ "message": "Quality check started for proxy" })))
 }
+
+/// Batch enable: enable all proxies that are currently Valid + disabled.
+pub async fn batch_enable_valid(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if state.validation_lock.try_lock().is_err() {
+        return Err(AppError::Conflict("验证进行中，请稍后操作".into()));
+    }
+
+    let targets: Vec<String> = state.pool.get_all()
+        .iter()
+        .filter(|p| p.is_disabled && p.status == crate::pool::manager::ProxyStatus::Valid)
+        .map(|p| p.id.clone())
+        .collect();
+
+    // Also include Disabled status that were previously validated as valid in DB
+    let db_targets: Vec<String> = state.pool.get_all()
+        .iter()
+        .filter(|p| p.is_disabled && p.status == crate::pool::manager::ProxyStatus::Disabled)
+        .filter(|p| {
+            // Check DB for is_valid flag
+            state.db.get_all_proxies().ok()
+                .and_then(|rows| rows.into_iter().find(|r| r.id == p.id))
+                .map(|r| r.is_valid)
+                .unwrap_or(false)
+        })
+        .map(|p| p.id.clone())
+        .collect();
+
+    let mut all_targets: Vec<String> = targets;
+    all_targets.extend(db_targets);
+    all_targets.sort();
+    all_targets.dedup();
+
+    let count = all_targets.len();
+    for id in &all_targets {
+        state.pool.set_disabled(id, false);
+        state.db.set_proxy_disabled(id, false).ok();
+    }
+
+    if count > 0 {
+        // Sync bindings to assign ports
+        let state2 = state.clone();
+        tokio::spawn(async move {
+            crate::api::subscription::sync_proxy_bindings(&state2).await;
+        });
+    }
+
+    tracing::info!("Batch enable-valid: enabled {} proxies", count);
+    Ok(Json(json!({
+        "message": format!("已启用 {} 个有效代理", count),
+        "enabled_count": count,
+    })))
+}
+
+/// Batch disable: disable all proxies that are currently Invalid + enabled.
+pub async fn batch_disable_invalid(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if state.validation_lock.try_lock().is_err() {
+        return Err(AppError::Conflict("验证进行中，请稍后操作".into()));
+    }
+
+    let targets: Vec<_> = state.pool.get_all()
+        .into_iter()
+        .filter(|p| !p.is_disabled && p.status == crate::pool::manager::ProxyStatus::Invalid)
+        .collect();
+
+    let count = targets.len();
+    for p in &targets {
+        state.pool.set_disabled(&p.id, true);
+        state.db.set_proxy_disabled(&p.id, true).ok();
+
+        // Release sing-box binding but keep DB local_port (port memory)
+        if let Some(port) = p.local_port {
+            let mut mgr = state.singbox.lock().await;
+            mgr.remove_binding(&p.id, port).await.ok();
+            state.pool.clear_local_port(&p.id);
+        }
+    }
+
+    tracing::info!("Batch disable-invalid: disabled {} proxies", count);
+    Ok(Json(json!({
+        "message": format!("已禁用 {} 个无效代理", count),
+        "disabled_count": count,
+    })))
+}
+
+/// Batch validate: validate only disabled proxies in background.
+pub async fn batch_validate_disabled(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        if let Err(e) = crate::pool::validator::validate_disabled_only(state_clone).await {
+            tracing::error!("Batch validate-disabled failed: {e}");
+        }
+    });
+
+    Ok(Json(json!({
+        "message": "已开始验证禁用代理",
+    })))
+}

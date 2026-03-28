@@ -248,6 +248,23 @@ async fn start_background_tasks(state: Arc<AppState>) {
             }
         });
     }
+
+    // Port memory cleanup — clear expired port assignments hourly
+    {
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            let interval = std::time::Duration::from_secs(3600); // 1 hour
+            loop {
+                tokio::time::sleep(interval).await;
+                match state_clone.db.clear_expired_port_memory() {
+                    Ok(count) if count > 0 => {
+                        tracing::info!("Cleared port memory for {count} expired disabled proxies");
+                    }
+                    _ => {}
+                }
+            }
+        });
+    }
 }
 
 async fn shutdown_signal() {
