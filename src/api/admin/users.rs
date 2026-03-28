@@ -128,12 +128,17 @@ pub struct ResetPasswordRequest {
 }
 
 pub async fn reset_user_password(
+    current_user: super::CurrentUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(req): Json<ResetPasswordRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    if current_user.role != "super_admin" {
+        return Err(AppError::Forbidden("Only super_admin can reset passwords".into()));
+    }
+
     if req.password.is_empty() {
-        return Err(AppError::Internal("Password is required".into()));
+        return Err(AppError::BadRequest("Password is required".into()));
     }
 
     let salt = SaltString::generate(&mut OsRng);
@@ -143,7 +148,9 @@ pub async fn reset_user_password(
         .to_string();
 
     state.db.update_user_password(&id, &hash)?;
+    state.auth_cache.retain(|_, (u, _)| u.id != id);
 
+    tracing::info!("User {} password reset by {}", id, current_user.username);
     Ok(Json(json!({ "message": "Password updated" })))
 }
 
@@ -155,10 +162,15 @@ pub struct UpdateUsernameRequest {
 }
 
 pub async fn update_username(
+    current_user: super::CurrentUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(req): Json<UpdateUsernameRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    if current_user.role != "super_admin" {
+        return Err(AppError::Forbidden("Only super_admin can change usernames".into()));
+    }
+
     let new_name = req.username.trim().to_string();
     if new_name.is_empty() || new_name.len() < 2 {
         return Err(AppError::BadRequest("Username must be at least 2 characters".into()));
@@ -172,6 +184,8 @@ pub async fn update_username(
     state.db.update_user_username(&id, &new_name)?;
     // Invalidate auth cache so name refreshes
     state.auth_cache.retain(|_, (u, _)| u.id != id);
+
+    tracing::info!("User {} username changed to {} by {}", id, new_name, current_user.username);
     Ok(Json(json!({ "message": "Username updated" })))
 }
 

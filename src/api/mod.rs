@@ -28,7 +28,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/auth/regenerate-key", post(auth::regenerate_key))
         .route("/api/auth/login/password", post(auth::login_password))
         .route("/api/auth/options", get(auth::auth_options))
-        .route("/api/auth/register", post(auth::register));
+        .route("/api/auth/register", post(auth::register))
+        .route("/api/auth/password", put(auth::change_password));
 
     // Admin routes — protected by session + role
     let admin_routes = Router::new()

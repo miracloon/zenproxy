@@ -223,6 +223,7 @@ pub async fn me(
         "api_key": user.api_key,
         "created_at": user.created_at,
         "role": user.role,
+        "auth_source": user.auth_source,
     })))
 }
 
@@ -504,4 +505,50 @@ pub async fn register(
     response.headers_mut()
         .insert("Set-Cookie", HeaderValue::from_str(&cookie).unwrap());
     Ok(response)
+}
+
+// --- Password Change (self-service) ---
+
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub old_password: String,
+    pub new_password: String,
+}
+
+pub async fn change_password(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<ChangePasswordRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let user = extract_session_user(&state, &headers).await?;
+
+    if user.auth_source != "password" {
+        return Err(AppError::BadRequest("OAuth users cannot change password".into()));
+    }
+
+    if req.new_password.is_empty() {
+        return Err(AppError::BadRequest("New password is required".into()));
+    }
+
+    // Verify old password
+    let hash_str = user.password_hash.as_deref()
+        .ok_or_else(|| AppError::Internal("No password hash on file".into()))?;
+    let parsed_hash = PasswordHash::new(hash_str)
+        .map_err(|_| AppError::Internal("Password hash error".into()))?;
+    Argon2::default()
+        .verify_password(req.old_password.as_bytes(), &parsed_hash)
+        .map_err(|_| AppError::BadRequest("Old password is incorrect".into()))?;
+
+    // Hash new password
+    let salt = SaltString::generate(&mut OsRng);
+    let new_hash = Argon2::default()
+        .hash_password(req.new_password.as_bytes(), &salt)
+        .map_err(|e| AppError::Internal(format!("Hash error: {e}")))?
+        .to_string();
+
+    state.db.update_user_password(&user.id, &new_hash)?;
+    state.auth_cache.retain(|_, (u, _)| u.id != user.id);
+
+    tracing::info!("User {} changed their password", user.username);
+    Ok(Json(json!({ "message": "Password changed successfully" })))
 }
