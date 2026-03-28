@@ -154,6 +154,11 @@ pub fn seed_settings_to_db(db: &Database, config: &AppConfig) -> Result<(), Box<
     // Subscription settings
     settings.insert("subscription_auto_refresh_interval_mins".to_string(), config.subscription.auto_refresh_interval_mins.to_string());
 
+    // Port memory settings (only seed default if not already set)
+    if db.get_setting("port_retention_hours").ok().flatten().is_none() {
+        db.set_setting("port_retention_hours", "24").ok();
+    }
+
     db.set_all_settings(&settings)?;
     tracing::info!("Seeded {} settings from config.toml to DB", settings.len());
     Ok(())

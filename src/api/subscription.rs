@@ -145,6 +145,7 @@ pub async fn add_subscription(
             created_at: now.clone(),
             updated_at: now.clone(),
             is_disabled: false,
+                disabled_at: None,
         };
         state.db.insert_proxy(&proxy_row)?;
 
@@ -286,6 +287,7 @@ pub async fn refresh_subscription_core(state: &Arc<AppState>, sub: &Subscription
                 created_at: now.clone(),
                 updated_at: now.clone(),
                 is_disabled: false,
+                disabled_at: None,
             };
             state.db.insert_proxy(&proxy_row)
                 .map_err(|e| format!("Failed to insert proxy: {e}"))?;

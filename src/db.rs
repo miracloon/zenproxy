@@ -35,6 +35,7 @@ pub struct ProxyRow {
     pub created_at: String,
     pub updated_at: String,
     pub is_disabled: bool,
+    pub disabled_at: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -205,6 +206,17 @@ impl Database {
             )?;
         }
 
+        // v0.36 migration: add disabled_at column to proxies
+        let has_disabled_at: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('proxies') WHERE name='disabled_at'")?
+            .query_row([], |r| r.get::<_, i32>(0))
+            .map(|c| c > 0)?;
+        if !has_disabled_at {
+            conn.execute_batch(
+                "ALTER TABLE proxies ADD COLUMN disabled_at TEXT;"
+            )?;
+        }
+
         Ok(())
     }
 
@@ -279,14 +291,14 @@ impl Database {
     pub fn insert_proxy(&self, proxy: &ProxyRow) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO proxies (id, subscription_id, name, proxy_type, server, port, config_json, is_valid, local_port, error_count, last_error, last_validated, created_at, updated_at, is_disabled)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            "INSERT OR REPLACE INTO proxies (id, subscription_id, name, proxy_type, server, port, config_json, is_valid, local_port, error_count, last_error, last_validated, created_at, updated_at, is_disabled, disabled_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 proxy.id, proxy.subscription_id, proxy.name, proxy.proxy_type,
                 proxy.server, proxy.port, proxy.config_json, proxy.is_valid as i32,
                 proxy.local_port, proxy.error_count, proxy.last_error,
                 proxy.last_validated, proxy.created_at, proxy.updated_at,
-                proxy.is_disabled as i32
+                proxy.is_disabled as i32, proxy.disabled_at
             ],
         )?;
         Ok(())
@@ -295,7 +307,7 @@ impl Database {
     pub fn get_all_proxies(&self) -> Result<Vec<ProxyRow>, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, subscription_id, name, proxy_type, server, port, config_json, is_valid, local_port, error_count, last_error, last_validated, created_at, updated_at, is_disabled
+            "SELECT id, subscription_id, name, proxy_type, server, port, config_json, is_valid, local_port, error_count, last_error, last_validated, created_at, updated_at, is_disabled, disabled_at
              FROM proxies ORDER BY created_at DESC"
         )?;
         let rows = stmt.query_map([], |row| {
@@ -315,6 +327,7 @@ impl Database {
                 created_at: row.get(12)?,
                 updated_at: row.get(13)?,
                 is_disabled: row.get::<_, i32>(14)? != 0,
+                disabled_at: row.get(15)?,
             })
         })?;
         rows.collect()
@@ -323,7 +336,7 @@ impl Database {
     pub fn get_proxies_by_subscription(&self, sub_id: &str) -> Result<Vec<ProxyRow>, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, subscription_id, name, proxy_type, server, port, config_json, is_valid, local_port, error_count, last_error, last_validated, created_at, updated_at, is_disabled
+            "SELECT id, subscription_id, name, proxy_type, server, port, config_json, is_valid, local_port, error_count, last_error, last_validated, created_at, updated_at, is_disabled, disabled_at
              FROM proxies WHERE subscription_id = ?1 ORDER BY name"
         )?;
         let rows = stmt.query_map(params![sub_id], |row| {
@@ -343,6 +356,7 @@ impl Database {
                 created_at: row.get(12)?,
                 updated_at: row.get(13)?,
                 is_disabled: row.get::<_, i32>(14)? != 0,
+                disabled_at: row.get(15)?,
             })
         })?;
         rows.collect()
@@ -809,9 +823,10 @@ impl Database {
     pub fn set_proxy_disabled(&self, id: &str, disabled: bool) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();
+        let disabled_at: Option<String> = if disabled { Some(now.clone()) } else { None };
         conn.execute(
-            "UPDATE proxies SET is_disabled = ?1, updated_at = ?2 WHERE id = ?3",
-            params![disabled as i32, now, id],
+            "UPDATE proxies SET is_disabled = ?1, disabled_at = ?2, updated_at = ?3 WHERE id = ?4",
+            params![disabled as i32, disabled_at, now, id],
         )?;
         Ok(())
     }
@@ -869,5 +884,59 @@ impl Database {
             )?;
         }
         Ok(())
+    }
+
+    // --- Port Memory ---
+
+    /// Get ports of disabled proxies still within retention period.
+    /// Returns Vec<u16> of local_port values to reserve.
+    pub fn get_remembered_ports(&self) -> Result<Vec<u16>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let retention_hours: f64 = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'port_retention_hours'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap_or_else(|_| "24".to_string())
+            .parse()
+            .unwrap_or(24.0);
+
+        let mut stmt = conn.prepare(
+            "SELECT local_port FROM proxies
+             WHERE is_disabled = 1
+               AND local_port IS NOT NULL
+               AND disabled_at IS NOT NULL
+               AND (julianday('now') - julianday(disabled_at)) * 24 <= ?1"
+        )?;
+        let rows = stmt.query_map(params![retention_hours], |row| {
+            row.get::<_, i32>(0).map(|p| p as u16)
+        })?;
+        rows.collect()
+    }
+
+    /// Clear local_port for disabled proxies past retention period.
+    /// Returns the number of proxies affected.
+    pub fn clear_expired_port_memory(&self) -> Result<usize, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let retention_hours: f64 = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'port_retention_hours'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap_or_else(|_| "24".to_string())
+            .parse()
+            .unwrap_or(24.0);
+
+        let count = conn.execute(
+            "UPDATE proxies SET local_port = NULL
+             WHERE is_disabled = 1
+               AND local_port IS NOT NULL
+               AND disabled_at IS NOT NULL
+               AND (julianday('now') - julianday(disabled_at)) * 24 > ?1",
+            params![retention_hours],
+        )?;
+        Ok(count)
     }
 }
