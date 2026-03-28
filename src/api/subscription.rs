@@ -52,12 +52,6 @@ pub async fn update_subscription(
     })))
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum SyncMode {
-    Normal,
-    Validation,
-    QualityCheck,
-}
 
 pub async fn list_subscriptions(
     State(state): State<Arc<AppState>>,
@@ -144,8 +138,8 @@ pub async fn add_subscription(
             last_validated: None,
             created_at: now.clone(),
             updated_at: now.clone(),
-            is_disabled: false,
-                disabled_at: None,
+            is_disabled: true,
+                disabled_at: Some(now.clone()),
         };
         state.db.insert_proxy(&proxy_row)?;
 
@@ -157,11 +151,11 @@ pub async fn add_subscription(
             server: pc.server.clone(),
             port: pc.port,
             singbox_outbound: pc.singbox_outbound.clone(),
-            status: ProxyStatus::Untested,
+            status: ProxyStatus::Disabled,
             local_port: None,
             error_count: 0,
             quality: None,
-            is_disabled: false,
+            is_disabled: true,
         };
         state.pool.add(pool_proxy);
         added += 1;
@@ -181,6 +175,7 @@ pub async fn add_subscription(
     Ok(Json(json!({
         "subscription": subscription,
         "proxies_added": added,
+        "notice": "新增代理默认禁用，请验证后启用。",
     })))
 }
 
@@ -194,7 +189,7 @@ pub async fn delete_subscription(
     // Sync bindings in background
     let state2 = state.clone();
     tokio::spawn(async move {
-        sync_proxy_bindings(&state2, SyncMode::Normal).await;
+        sync_proxy_bindings(&state2).await;
     });
 
     Ok(Json(json!({ "message": "Subscription deleted" })))
@@ -361,125 +356,54 @@ pub async fn refresh_subscription(
     })))
 }
 
-/// Sync proxy bindings dynamically without restarting sing-box.
+/// Sync proxy bindings — enabled-only model with port memory reservation.
 ///
-/// Port pool total = max_proxies + batch_size.
-/// - Normal: top max_proxies Valid proxies get ports.
-/// - Validation: keep ALL Valid bindings untouched; Untested use extra batch_size ports.
-/// - QualityCheck: keep ALL Valid bindings; needs-quality use extra batch_size ports.
-/// Zero disruption to user traffic during validation/quality-check.
-pub async fn sync_proxy_bindings(state: &Arc<AppState>, mode: SyncMode) {
+/// This function:
+/// 1. Pre-occupies remembered ports (disabled proxies within retention period) in PortPool
+/// 2. Assigns ports only to enabled proxies (up to max_proxies)
+/// 3. For each enabled proxy: restore remembered port > keep existing > allocate new
+/// 4. Releases pre-occupied ports not actually used
+/// 5. Removes bindings for proxies no longer selected
+pub async fn sync_proxy_bindings(state: &Arc<AppState>) {
     let all_proxies = state.pool.get_all();
     if all_proxies.is_empty() {
         return;
     }
 
-    let max = state.config.singbox.max_proxies; // boot config, not runtime-editable
-    let batch = state.db.get_setting("validation_batch_size")
-        .ok().flatten().and_then(|v| v.parse().ok())
-        .unwrap_or(state.config.validation.batch_size);
+    let max = state.config.singbox.max_proxies;
 
-    // Snapshot ALL current ports before changes (for sync_bindings diff)
+    // Snapshot ALL current ports before changes
     let all_current_ports: Vec<(String, u16)> = all_proxies
         .iter()
         .filter_map(|p| p.local_port.map(|port| (p.id.clone(), port)))
         .collect();
 
-    // Classify proxies
-    let mut valid_with_port: Vec<PoolProxy> = Vec::new();
-    let mut valid_no_port: Vec<PoolProxy> = Vec::new();
-    let mut untested: Vec<PoolProxy> = Vec::new();
-    let mut invalid: Vec<PoolProxy> = Vec::new();
-    let mut needs_quality: Vec<PoolProxy> = Vec::new();
+    // Get remembered ports for disabled proxies within retention period
+    let remembered_ports: Vec<u16> = state.db.get_remembered_ports().unwrap_or_default();
 
-    let now = chrono::Utc::now();
-    for p in all_proxies {
+    // Separate enabled vs disabled
+    let mut enabled: Vec<PoolProxy> = Vec::new();
+    for p in &all_proxies {
         if p.is_disabled {
-            // Disabled proxies never get ports
+            // Disabled proxies never get ports — clear if somehow set in pool
             if p.local_port.is_some() {
                 state.pool.clear_local_port(&p.id);
-                state.db.update_proxy_local_port_null(&p.id).ok();
+                // DON'T clear DB local_port — that's port memory
             }
-            continue;
-        }
-        match p.status {
-            ProxyStatus::Valid => {
-                if matches!(mode, SyncMode::QualityCheck) && needs_quality_check(&p, &now) {
-                    needs_quality.push(p);
-                } else if p.local_port.is_some() {
-                    valid_with_port.push(p);
-                } else {
-                    valid_no_port.push(p);
-                }
-            }
-            ProxyStatus::Untested => untested.push(p),
-            ProxyStatus::Invalid | ProxyStatus::Disabled => invalid.push(p),
+        } else {
+            enabled.push(p.clone());
         }
     }
 
-    valid_with_port.sort_by_key(|p| p.error_count);
-    valid_no_port.sort_by_key(|p| p.error_count);
-    untested.sort_by_key(|p| p.error_count);
-    needs_quality.sort_by_key(|p| p.error_count);
+    // Cap at max_proxies
+    let cap = max.min(enabled.len());
+    let selected: Vec<PoolProxy> = enabled.drain(..cap).collect();
 
-    let mut selected: Vec<PoolProxy> = Vec::new();
-
-    match mode {
-        SyncMode::Normal => {
-            // Valid first, fill up to max_proxies only (no extra ports)
-            let mut ordered = Vec::new();
-            ordered.extend(valid_with_port);
-            ordered.extend(valid_no_port);
-            ordered.extend(untested);
-            ordered.extend(invalid);
-            let cap = max.min(ordered.len());
-            selected = ordered.drain(..cap).collect();
-            for p in &ordered {
-                if p.local_port.is_some() {
-                    state.pool.clear_local_port(&p.id);
-                    state.db.update_proxy_local_port_null(&p.id).ok();
-                }
-            }
-        }
-        SyncMode::Validation => {
-            // Keep ALL Valid-with-port (up to max). Fill remaining normal slots with valid_no_port.
-            // Then use EXTRA batch_size ports (beyond max_proxies) for Untested.
-            let keep = valid_with_port.len().min(max);
-            selected.extend(valid_with_port.drain(..keep));
-            let normal_remaining = max.saturating_sub(selected.len());
-            let fill = normal_remaining.min(valid_no_port.len());
-            selected.extend(valid_no_port.drain(..fill));
-            // Extra ports for Untested — these use ports max_proxies+1 .. max_proxies+batch_size
-            let test_count = untested.len().min(batch);
-            selected.extend(untested.drain(..test_count));
-            // Clear ports for everything not selected
-            for p in valid_with_port.iter().chain(valid_no_port.iter())
-                .chain(untested.iter()).chain(invalid.iter())
-            {
-                if p.local_port.is_some() {
-                    state.pool.clear_local_port(&p.id);
-                    state.db.update_proxy_local_port_null(&p.id).ok();
-                }
-            }
-        }
-        SyncMode::QualityCheck => {
-            // Keep ALL Valid-with-port. Use EXTRA batch_size ports for quality checks.
-            let keep = valid_with_port.len().min(max);
-            selected.extend(valid_with_port.drain(..keep));
-            let normal_remaining = max.saturating_sub(selected.len());
-            let fill = normal_remaining.min(valid_no_port.len());
-            selected.extend(valid_no_port.drain(..fill));
-            // Extra ports for quality checks
-            let check_count = needs_quality.len().min(batch);
-            selected.extend(needs_quality.drain(..check_count));
-            for p in valid_with_port.iter().chain(valid_no_port.iter())
-                .chain(needs_quality.iter()).chain(untested.iter()).chain(invalid.iter())
-            {
-                if p.local_port.is_some() {
-                    state.pool.clear_local_port(&p.id);
-                    state.db.update_proxy_local_port_null(&p.id).ok();
-                }
-            }
+    // Clear ports for overflow (enabled but beyond max_proxies)
+    for p in &enabled {
+        if p.local_port.is_some() {
+            state.pool.clear_local_port(&p.id);
+            state.db.update_proxy_local_port_null(&p.id).ok();
         }
     }
 
@@ -488,18 +412,33 @@ pub async fn sync_proxy_bindings(state: &Arc<AppState>, mode: SyncMode) {
         .map(|p| (p.id.clone(), p.singbox_outbound.clone()))
         .collect();
 
-    let mode_str = match mode {
-        SyncMode::Normal => "normal",
-        SyncMode::Validation => "validation",
-        SyncMode::QualityCheck => "quality-check",
-    };
     tracing::info!(
-        "Syncing bindings: {} selected (mode={}, max={}, batch={})",
-        selected.len(), mode_str, max, batch,
+        "Syncing bindings: {} selected (max={}, remembered_ports={})",
+        selected.len(), max, remembered_ports.len(),
     );
 
     let mut mgr = state.singbox.lock().await;
+
+    // Pre-occupy remembered ports in PortPool (Method A)
+    let mut pre_occupied: Vec<u16> = Vec::new();
+    for port in &remembered_ports {
+        if mgr.allocate_specific_in_pool(*port).is_ok() {
+            pre_occupied.push(*port);
+        }
+    }
+
     let assignments = mgr.sync_bindings(&desired, &all_current_ports).await;
+    drop(mgr);
+
+    // Release pre-occupied ports that weren't actually used by any assignment
+    let assigned_ports: std::collections::HashSet<u16> =
+        assignments.iter().map(|(_, port)| *port).collect();
+    let mut mgr = state.singbox.lock().await;
+    for port in &pre_occupied {
+        if !assigned_ports.contains(port) {
+            mgr.free_port_in_pool(*port);
+        }
+    }
     drop(mgr);
 
     // Update pool and DB
@@ -520,26 +459,4 @@ pub async fn sync_proxy_bindings(state: &Arc<AppState>, mode: SyncMode) {
 
     let active_ports: Vec<u16> = assignments.iter().map(|(_, port)| *port).collect();
     crate::api::relay::invalidate_relay_clients(state, &active_ports);
-}
-
-/// Check if a proxy needs quality check (same logic as checker.rs)
-fn needs_quality_check(proxy: &PoolProxy, now: &chrono::DateTime<chrono::Utc>) -> bool {
-    match &proxy.quality {
-        None => true,
-        Some(q) => {
-            if q.country.is_none() || q.ip_type.is_none() || q.ip_address.is_none() || q.risk_level == "Unknown" {
-                return true;
-            }
-            if let Some(ref checked_str) = q.checked_at {
-                if let Ok(checked) = chrono::DateTime::parse_from_rfc3339(checked_str) {
-                    let age = *now - checked.with_timezone(&chrono::Utc);
-                    age.num_hours() >= 24
-                } else {
-                    true
-                }
-            } else {
-                true
-            }
-        }
-    }
 }

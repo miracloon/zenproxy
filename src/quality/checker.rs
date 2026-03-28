@@ -42,50 +42,14 @@ pub async fn check_all(state: Arc<AppState>) -> Result<usize, String> {
     let mut total_checked = 0usize;
     let rate_limiter = Arc::new(RateLimiter::new(40));
 
-    // Hold lock only for short binding-selection work.
-    let (mut to_check, did_reassign) = {
-        let _lock = state.validation_lock.lock().await;
-        let mut did_reassign = false;
-
-        let mut to_check: Vec<PoolProxy> = state
-            .pool
-            .get_valid_proxies()
-            .into_iter()
-            .filter(|p| p.local_port.is_some() && !p.is_disabled)
-            .filter(|p| needs_quality_check(p, &now))
-            .collect();
-
-        if to_check.is_empty() {
-            let remaining_without_port = state
-                .pool
-                .get_valid_proxies()
-                .into_iter()
-                .filter(|p| p.local_port.is_none() && needs_quality_check(p, &now) && !p.is_disabled)
-                .count();
-
-            if remaining_without_port > 0 {
-                tracing::info!(
-                    "Quality check: {remaining_without_port} valid proxies need checking but have no port, reassigning once"
-                );
-                crate::api::subscription::sync_proxy_bindings(
-                    &state,
-                    crate::api::subscription::SyncMode::QualityCheck,
-                )
-                .await;
-                did_reassign = true;
-
-                to_check = state
-                    .pool
-                    .get_valid_proxies()
-                    .into_iter()
-                    .filter(|p| p.local_port.is_some() && !p.is_disabled)
-                    .filter(|p| needs_quality_check(p, &now))
-                    .collect();
-            }
-        }
-
-        (to_check, did_reassign)
-    };
+    // Only quality-check enabled + valid + has-port proxies
+    let mut to_check: Vec<PoolProxy> = state
+        .pool
+        .get_all()
+        .into_iter()
+        .filter(|p| !p.is_disabled && p.status == crate::pool::manager::ProxyStatus::Valid && p.local_port.is_some())
+        .filter(|p| needs_quality_check(p, &now))
+        .collect();
 
     if !to_check.is_empty() {
         if to_check.len() > MAX_QUALITY_CHECKS_PER_RUN {
@@ -96,11 +60,6 @@ pub async fn check_all(state: Arc<AppState>) -> Result<usize, String> {
             to_check.len()
         );
         total_checked += check_batch(&to_check, &state, &rate_limiter).await;
-    }
-
-    if did_reassign {
-        let _lock = state.validation_lock.lock().await;
-        crate::api::subscription::sync_proxy_bindings(&state, crate::api::subscription::SyncMode::Normal).await;
     }
 
     if total_checked > 0 {

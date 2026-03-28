@@ -108,6 +108,11 @@ pub async fn toggle_proxy(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    // Check if validation is running — don't block, return friendly error
+    if state.validation_lock.try_lock().is_err() {
+        return Err(AppError::Conflict("验证进行中，请稍后操作".into()));
+    }
+
     let proxy = state.pool.get(&id)
         .ok_or_else(|| AppError::NotFound("Proxy not found".into()))?;
 
@@ -115,14 +120,20 @@ pub async fn toggle_proxy(
     state.pool.set_disabled(&id, new_disabled);
     state.db.set_proxy_disabled(&id, new_disabled)?;
 
-    // If disabling, clear the local port binding
     if new_disabled {
+        // Disabling: release sing-box binding but KEEP DB local_port (port memory)
         if let Some(port) = proxy.local_port {
             let mut mgr = state.singbox.lock().await;
             mgr.remove_binding(&id, port).await.ok();
             state.pool.clear_local_port(&id);
-            state.db.update_proxy_local_port_null(&id).ok();
+            // DON'T clear DB local_port — that's port memory
         }
+    } else {
+        // Enabling: sync bindings to assign port (will try to restore remembered port)
+        let state2 = state.clone();
+        tokio::spawn(async move {
+            crate::api::subscription::sync_proxy_bindings(&state2).await;
+        });
     }
 
     let status_str = if new_disabled { "disabled" } else { "enabled" };

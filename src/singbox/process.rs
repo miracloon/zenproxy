@@ -348,6 +348,18 @@ impl SingboxManager {
     pub fn used_ports(&self) -> usize {
         self.port_pool.used_count()
     }
+
+    /// Directly reserve a specific port in the pool without creating a sing-box binding.
+    /// Used for port memory reservation (Method A) in sync_proxy_bindings.
+    pub fn allocate_specific_in_pool(&mut self, port: u16) -> Result<(), String> {
+        self.port_pool.allocate_specific(port)
+    }
+
+    /// Directly free a port in the pool without removing any sing-box binding.
+    /// Used to release pre-occupied port memory reservations.
+    pub fn free_port_in_pool(&mut self, port: u16) {
+        self.port_pool.free(port);
+    }
 }
 
 /// Try to find sing-box: same directory as our executable first, then config path, then system PATH.
