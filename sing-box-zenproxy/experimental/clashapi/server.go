@@ -185,10 +185,10 @@ func (s *Server) Start(stage adapter.StartStage) error {
 				s.mode = mode
 			}
 		}
-	case adapter.StartStateStarted:
-		if s.externalController {
-			s.checkAndDownloadExternalUI()
-			var (
+		case adapter.StartStateStarted:
+			if s.externalController {
+				s.checkAndDownloadExternalUI()
+				var (
 				listener net.Listener
 				err      error
 			)
@@ -204,14 +204,15 @@ func (s *Server) Start(stage adapter.StartStage) error {
 				return E.Cause(err, "external controller listen error")
 			}
 			s.logger.Info("restful api listening at ", listener.Addr())
-			go func() {
-				err = s.httpServer.Serve(listener)
-				if err != nil && !errors.Is(err, http.ErrServerClosed) {
-					s.logger.Error("external controller serve error: ", err)
-				}
-			}()
+				go func() {
+					err = s.httpServer.Serve(listener)
+					if err != nil && !errors.Is(err, http.ErrServerClosed) {
+						s.logger.Error("external controller serve error: ", err)
+					}
+				}()
+				go s.bindingManager.runStartupFetch()
+			}
 		}
-	}
 
 	return nil
 }
