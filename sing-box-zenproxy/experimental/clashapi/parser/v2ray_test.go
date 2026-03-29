@@ -67,3 +67,30 @@ func TestParseHTTPDecodesPercentEncodedBase64Userinfo(t *testing.T) {
 	}
 }
 
+func TestParseSocksSupportsBracketedIPv6Host(t *testing.T) {
+	proxy := ParseURI("socks5://user:pass@[2001:db8::1]:1080#ipv6-socks")
+	if proxy == nil {
+		t.Fatal("uri should parse")
+	}
+
+	if proxy.Server != "2001:db8::1" {
+		t.Fatalf("expected server 2001:db8::1, got %q", proxy.Server)
+	}
+	if proxy.Port != 1080 {
+		t.Fatalf("expected port 1080, got %d", proxy.Port)
+	}
+}
+
+func TestParseHTTPSupportsBracketedIPv6Host(t *testing.T) {
+	proxy := ParseURI("http://user:pass@[2001:db8::1]:8080")
+	if proxy == nil {
+		t.Fatal("uri should parse")
+	}
+
+	if proxy.Server != "2001:db8::1" {
+		t.Fatalf("expected server 2001:db8::1, got %q", proxy.Server)
+	}
+	if proxy.Port != 8080 {
+		t.Fatalf("expected port 8080, got %d", proxy.Port)
+	}
+}
