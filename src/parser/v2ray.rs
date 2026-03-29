@@ -603,4 +603,26 @@ mod tests {
         assert_eq!(username.as_deref(), Some("encoded-user"));
         assert_eq!(password.as_deref(), Some(""));
     }
+
+    #[test]
+    fn parse_socks_supports_bracketed_ipv6_host() {
+        let proxy = parse_uri("socks5://user:pass@[2001:db8::1]:1080#ipv6-socks")
+            .expect("uri should parse");
+
+        assert_eq!(proxy.server, "2001:db8::1");
+        assert_eq!(proxy.port, 1080);
+        assert_eq!(proxy.singbox_outbound.get("server").and_then(|v| v.as_str()), Some("2001:db8::1"));
+        assert_eq!(proxy.singbox_outbound.get("server_port").and_then(|v| v.as_u64()), Some(1080));
+    }
+
+    #[test]
+    fn parse_http_supports_bracketed_ipv6_host() {
+        let proxy = parse_uri("http://user:pass@[2001:db8::1]:8080")
+            .expect("uri should parse");
+
+        assert_eq!(proxy.server, "2001:db8::1");
+        assert_eq!(proxy.port, 8080);
+        assert_eq!(proxy.singbox_outbound.get("server").and_then(|v| v.as_str()), Some("2001:db8::1"));
+        assert_eq!(proxy.singbox_outbound.get("server_port").and_then(|v| v.as_u64()), Some(8080));
+    }
 }
