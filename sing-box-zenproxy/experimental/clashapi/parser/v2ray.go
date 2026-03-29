@@ -466,12 +466,7 @@ func parseSocks(uri string) *ProxyConfig {
 	if atIdx := strings.Index(mainPart, "@"); atIdx >= 0 {
 		userinfo := mainPart[:atIdx]
 		hostPort = mainPart[atIdx+1:]
-		if colonIdx := strings.Index(userinfo, ":"); colonIdx >= 0 {
-			username = userinfo[:colonIdx]
-			password = userinfo[colonIdx+1:]
-		} else {
-			username = userinfo
-		}
+		username, password = decodeProxyUserinfo(userinfo)
 	} else {
 		hostPort = mainPart
 	}
@@ -532,12 +527,7 @@ func parseHTTPProxy(uri string) *ProxyConfig {
 	if atIdx := strings.Index(mainPart, "@"); atIdx >= 0 {
 		userinfo := mainPart[:atIdx]
 		hostPort = mainPart[atIdx+1:]
-		if colonIdx := strings.Index(userinfo, ":"); colonIdx >= 0 {
-			username = userinfo[:colonIdx]
-			password = userinfo[colonIdx+1:]
-		} else {
-			username = userinfo
-		}
+		username, password = decodeProxyUserinfo(userinfo)
 	} else {
 		hostPort = mainPart
 	}
@@ -618,6 +608,33 @@ func parseQueryParams(query string) map[string]string {
 		}
 	}
 	return params
+}
+
+func decodeProxyUserinfo(userinfo string) (string, string) {
+	if username, password, ok := splitUserinfoPair(userinfo); ok {
+		return username, password
+	}
+
+	percentDecoded := urlDecode(userinfo)
+	if username, password, ok := splitUserinfoPair(percentDecoded); ok {
+		return username, password
+	}
+
+	if decoded := tryBase64Decode(percentDecoded); decoded != nil {
+		decodedStr := string(decoded)
+		if username, password, ok := splitUserinfoPair(decodedStr); ok {
+			return username, password
+		}
+	}
+
+	return percentDecoded, ""
+}
+
+func splitUserinfoPair(userinfo string) (string, string, bool) {
+	if colonIdx := strings.Index(userinfo, ":"); colonIdx >= 0 {
+		return userinfo[:colonIdx], userinfo[colonIdx+1:], true
+	}
+	return "", "", false
 }
 
 func splitFragment(s string) (string, string) {
