@@ -215,6 +215,8 @@ tr:hover td { background:rgba(108,99,255,.03); }
         <option value="chatgpt">ChatGPT 可用</option>
         <option value="google">Google 可用</option>
         <option value="residential">住宅IP</option>
+        <option value="ipv4">IPv4 出口</option>
+        <option value="ipv6">IPv6 出口</option>
         <option value="unchecked">未质检</option>
       </select>
     </div>
@@ -227,6 +229,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
           <th onclick="sortBy('is_valid')">状态</th>
           <th onclick="sortBy('local_port')">端口</th>
           <th>IP</th>
+          <th>IP族</th>
           <th onclick="sortBy('country')">国家</th>
           <th>IP类型</th>
           <th onclick="sortBy('risk')">风险</th>
@@ -253,6 +256,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
       <div class="inline-group">
         <div class="form-group"><label>国家</label><input id="fetch-country" placeholder="例如 US"></div>
         <div class="form-group"><label>类型</label><input id="fetch-type" placeholder="例如 vmess"></div>
+        <div class="form-group"><label>IP族</label><select id="fetch-ip-family"><option value="">全部</option><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></select></div>
         <div class="form-group"><label>数量</label><input id="fetch-count" type="number" value="1" min="1"></div>
         <button class="btn btn-primary" onclick="fetchProxy()">获取</button>
       </div>
@@ -273,6 +277,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
       <div class="inline-group" style="margin-bottom:14px">
         <div class="form-group"><label>国家</label><input id="relay-country" placeholder="例如 US"></div>
         <div class="form-group"><label>类型</label><input id="relay-type" placeholder="例如 vmess"></div>
+        <div class="form-group"><label>IP族</label><select id="relay-ip-family"><option value="">全部</option><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></select></div>
       </div>
       <button class="btn btn-primary" onclick="doRelay()">发送请求</button>
       <div class="result-box" id="relay-result" style="display:none"></div>
@@ -413,6 +418,8 @@ function renderProxies() {
     if (quality === 'chatgpt' && (!p.quality || !p.quality.chatgpt)) return false;
     if (quality === 'google' && (!p.quality || !p.quality.google)) return false;
     if (quality === 'residential' && (!p.quality || !p.quality.is_residential)) return false;
+    if (quality === 'ipv4' && (!p.quality || p.quality.ip_family !== 'ipv4')) return false;
+    if (quality === 'ipv6' && (!p.quality || p.quality.ip_family !== 'ipv6')) return false;
     if (quality === 'unchecked' && p.quality) return false;
     return true;
   });
@@ -462,6 +469,7 @@ function renderProxies() {
       <td>${p.status==='valid'?'<span class="badge badge-valid">有效</span>':p.status==='untested'?'<span class="badge badge-untested">待检测</span>':'<span class="badge badge-invalid">无效</span>'}</td>
       <td>${p.local_port ? p.local_port : '<span style="color:var(--text-dim)">—</span>'}</td>
       <td>${q && q.ip_address ? esc(q.ip_address) : '-'}</td>
+      <td>${q && q.ip_family ? esc(q.ip_family.toUpperCase()) : '-'}</td>
       <td>${q && q.country ? esc(q.country) : '-'}</td>
       <td>${q && q.ip_type ? esc(q.ip_type) : '-'}</td>
       <td>${riskBadge}</td>
@@ -515,6 +523,8 @@ async function fetchProxy() {
   if (country) params.set('country', country);
   const type_ = document.getElementById('fetch-type').value.trim();
   if (type_) params.set('type', type_);
+  const ipFamily = document.getElementById('fetch-ip-family').value;
+  if (ipFamily) params.set('ip_family', ipFamily);
   const count = document.getElementById('fetch-count').value;
   if (count) params.set('count', count);
   try {
@@ -544,6 +554,8 @@ async function doRelay() {
   if (relayCountry) params.set('country', relayCountry);
   const relayType = document.getElementById('relay-type').value.trim();
   if (relayType) params.set('type', relayType);
+  const relayIPFamily = document.getElementById('relay-ip-family').value;
+  if (relayIPFamily) params.set('ip_family', relayIPFamily);
   const box = document.getElementById('relay-result');
   box.style.display = 'block';
   box.textContent = '请求中...';

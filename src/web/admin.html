@@ -296,6 +296,8 @@ tr:hover td { background:rgba(108,99,255,.03); }
                     <option value="chatgpt">ChatGPT 可用</option>
                     <option value="google">Google 可用</option>
                     <option value="residential">Residential</option>
+                    <option value="ipv4">IPv4 出口</option>
+                    <option value="ipv6">IPv6 出口</option>
                 </select>
                 <select id="f-pagesize" class="page-size-select" onchange="changePageSize()">
                     <option value="30">每页 30</option>
@@ -314,6 +316,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
                         <th onclick="sortBy('local_port')">端口</th>
                         <th onclick="sortBy('error_count')">错误</th>
                         <th>IP</th>
+                        <th>IP族</th>
                         <th onclick="sortBy('country')">国家</th>
                         <th onclick="sortBy('risk')">风险</th>
                         <th>GPT</th>
@@ -589,6 +592,8 @@ function getFilteredProxies() {
     if(quality==='chatgpt' && (!p.quality||!p.quality.chatgpt)) return false;
     if(quality==='google' && (!p.quality||!p.quality.google)) return false;
     if(quality==='residential' && (!p.quality||!p.quality.is_residential)) return false;
+    if(quality==='ipv4' && (!p.quality||p.quality.ip_family!=='ipv4')) return false;
+    if(quality==='ipv6' && (!p.quality||p.quality.ip_family!=='ipv6')) return false;
     return true;
   });
 
@@ -727,6 +732,7 @@ function renderProxies() {
       <td>${p.local_port ? p.local_port : '<span style="color:var(--text-dim)">—</span>'}</td>
       <td>${p.error_count}</td>
       <td>${q&&q.ip_address?esc(q.ip_address):'-'}</td>
+      <td>${q&&q.ip_family?esc(q.ip_family.toUpperCase()):'-'}</td>
       <td>${q&&q.country?esc(q.country):'-'}</td>
       <td>${riskBadge}</td>
       <td>${q?(q.chatgpt?yes:no):na}</td>

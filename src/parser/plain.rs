@@ -29,9 +29,12 @@ fn parse_plain_line(line: &str, proxy_type_str: &str) -> Option<ProxyConfig> {
         // user:pass@host:port
         let (userinfo, host_port) = line.split_once('@')?;
         let (user, pass) = userinfo.split_once(':')?;
-        let (host, port_str) = host_port.rsplit_once(':')?;
-        let port: u16 = port_str.parse().ok()?;
+        let (host, port) = parse_plain_host_port(host_port)?;
+        let port: u16 = port;
         (host.to_string(), port, user.to_string(), pass.to_string())
+    } else if line.starts_with('[') {
+        let (host, port) = parse_plain_host_port(line)?;
+        (host.to_string(), port, String::new(), String::new())
     } else {
         // Count colons to distinguish host:port from host:port:user:pass
         let parts: Vec<&str> = line.rsplitn(3, ':').collect();
@@ -149,5 +152,54 @@ fn parse_plain_line(line: &str, proxy_type_str: &str) -> Option<ProxyConfig> {
             })
         }
         _ => None,
+    }
+}
+
+fn parse_plain_host_port(input: &str) -> Option<(&str, u16)> {
+    if input.starts_with('[') {
+        let end_bracket = input.find(']')?;
+        let host = &input[1..end_bracket];
+        let port_str = input[end_bracket + 1..].strip_prefix(':')?;
+        let port: u16 = port_str.parse().ok()?;
+        Some((host, port))
+    } else {
+        let (host, port_str) = input.rsplit_once(':')?;
+        let port: u16 = port_str.parse().ok()?;
+        Some((host, port))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    #[test]
+    fn parse_plain_supports_bracketed_ipv6_host_port() {
+        let proxies = parse("[2001:db8::1]:1080", "socks5");
+
+        assert_eq!(proxies.len(), 1);
+        assert_eq!(proxies[0].server, "2001:db8::1");
+        assert_eq!(proxies[0].port, 1080);
+    }
+
+    #[test]
+    fn parse_plain_supports_bracketed_ipv6_with_userinfo() {
+        let proxies = parse("user:pass@[2001:db8::1]:1080", "socks5");
+
+        assert_eq!(proxies.len(), 1);
+        assert_eq!(proxies[0].server, "2001:db8::1");
+        assert_eq!(proxies[0].port, 1080);
+
+        let username = proxies[0]
+            .singbox_outbound
+            .get("username")
+            .and_then(|v| v.as_str());
+        let password = proxies[0]
+            .singbox_outbound
+            .get("password")
+            .and_then(|v| v.as_str());
+
+        assert_eq!(username, Some("user"));
+        assert_eq!(password, Some("pass"));
     }
 }

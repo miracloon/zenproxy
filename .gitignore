@@ -33,3 +33,12 @@ docker/server/data/*.db-shm
 docker/server/data/*.db-wal
 docker/server/data/singbox-config.json
 docker/client/data/
+
+# Python
+.venv/
+uv.lock
+__pycache__/
+*.pyc
+
+# superpower
+.superpowers/

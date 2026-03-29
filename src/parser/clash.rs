@@ -450,4 +450,22 @@ proxies:
         assert_eq!(result[1].name, "trojan-demo");
         assert_eq!(result[1].server, "trojan.example.com");
     }
+
+    #[test]
+    fn test_parse_ipv6_socks_proxy() {
+        let content = r#"
+proxies:
+  - name: ipv6-socks
+    type: socks5
+    server: 2001:db8::1
+    port: 1080
+    username: user
+    password: pass
+"#;
+        let result = parse(&content);
+        assert_eq!(result.len(), 1, "Should parse the inline IPv6 socks proxy");
+        assert_eq!(result[0].name, "ipv6-socks");
+        assert_eq!(result[0].server, "2001:db8::1");
+        assert_eq!(result[0].port, 1080);
+    }
 }

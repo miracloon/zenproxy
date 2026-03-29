@@ -5,7 +5,7 @@
 ## 前置条件
 
 ```bash
-pip install aiohttp
+uv sync
 ```
 
 ## 两种模式对比
@@ -24,7 +24,7 @@ pip install aiohttp
 
 ```
 examples/
-├── config.json          # sing-box 最小配置（本地客户端模式需要）
+├── config.json          # 需要按下文示例自行创建
 ├── parallel_proxy.py    # 本地客户端 - 并行多 IP
 ├── rotating_proxy.py    # 本地客户端 - 轮换多 IP
 ├── parallel_relay.py    # Relay - 并行多 IP
@@ -81,7 +81,7 @@ ZENPROXY_API_KEY = "your-api-key"          # 你的 API Key
 ./zenproxy-client run -c config.json
 
 # 另一个终端运行示例
-python parallel_proxy.py
+uv run python tests/examples/parallel_proxy.py
 ```
 
 **输出示例**：
@@ -132,7 +132,7 @@ python parallel_proxy.py
 **运行**：
 
 ```bash
-python rotating_proxy.py
+uv run python tests/examples/rotating_proxy.py
 ```
 
 **输出示例**：
@@ -190,7 +190,7 @@ python rotating_proxy.py
 
 ```bash
 # 不需要 sing-box，直接运行
-python parallel_relay.py
+uv run python tests/examples/parallel_relay.py
 ```
 
 **输出示例**：
@@ -227,7 +227,7 @@ python parallel_relay.py
 **运行**：
 
 ```bash
-python rotating_relay.py
+uv run python tests/examples/rotating_relay.py
 ```
 
 **输出示例**：

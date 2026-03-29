@@ -31,6 +31,7 @@ pub async fn list_proxies(
                 "is_disabled": p.is_disabled,
                 "quality": p.quality.as_ref().map(|q| json!({
                     "ip_address": q.ip_address,
+                    "ip_family": q.ip_family,
                     "country": q.country,
                     "ip_type": q.ip_type,
                     "is_residential": q.is_residential,

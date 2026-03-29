@@ -1,5 +1,5 @@
 use crate::db::ProxyQuality;
-use crate::pool::manager::{PoolProxy, ProxyQualityInfo};
+use crate::pool::manager::{PoolProxy, ProxyQualityInfo, derive_ip_family};
 use crate::AppState;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
@@ -408,8 +408,11 @@ async fn check_single(
         ip_type
     };
 
+    let ip_family = derive_ip_family(ip_address.as_deref());
+
     Ok(ProxyQualityInfo {
         ip_address,
+        ip_family,
         country,
         ip_type,
         is_residential,
@@ -442,6 +445,7 @@ mod tests {
     ) -> ProxyQualityInfo {
         ProxyQualityInfo {
             ip_address: ip_address.map(str::to_string),
+            ip_family: derive_ip_family(ip_address),
             country: None,
             ip_type: None,
             is_residential: false,

@@ -31,6 +31,7 @@ pub struct RelayParams {
     pub residential: bool,
     pub risk_max: Option<f64>,
     pub country: Option<String>,
+    pub ip_family: Option<String>,
     #[serde(rename = "type")]
     pub proxy_type: Option<String>,
 }
@@ -60,6 +61,7 @@ pub async fn relay_request(
         residential: params.residential,
         risk_max: params.risk_max,
         country: params.country,
+        ip_family: params.ip_family,
         proxy_type: params.proxy_type,
         proxy_id: params.proxy_id,
         count: None,

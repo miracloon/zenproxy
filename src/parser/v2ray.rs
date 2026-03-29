@@ -345,11 +345,8 @@ fn parse_socks(uri: &str) -> Option<ProxyConfig> {
 
     let (username, password, host_port) = if main_part.contains('@') {
         let (userinfo, hp) = main_part.split_once('@')?;
-        if let Some((user, pass)) = userinfo.split_once(':') {
-            (user.to_string(), pass.to_string(), hp)
-        } else {
-            (userinfo.to_string(), String::new(), hp)
-        }
+        let (username, password) = decode_proxy_userinfo(userinfo);
+        (username, password, hp)
     } else {
         (String::new(), String::new(), main_part)
     };
@@ -402,11 +399,8 @@ fn parse_http_proxy(uri: &str) -> Option<ProxyConfig> {
 
     let (username, password, host_port) = if main_part.contains('@') {
         let (userinfo, hp) = main_part.split_once('@')?;
-        if let Some((user, pass)) = userinfo.split_once(':') {
-            (user.to_string(), pass.to_string(), hp)
-        } else {
-            (userinfo.to_string(), String::new(), hp)
-        }
+        let (username, password) = decode_proxy_userinfo(userinfo);
+        (username, password, hp)
     } else {
         (String::new(), String::new(), main_part)
     };
@@ -462,6 +456,50 @@ fn parse_host_port(s: &str) -> Option<(&str, &str)> {
     }
 }
 
+fn decode_proxy_userinfo(userinfo: &str) -> (String, String) {
+    if let Some((user, pass)) = split_userinfo_pair(userinfo) {
+        return (user.to_string(), pass.to_string());
+    }
+
+    let percent_decoded = percent_encoding::percent_decode_str(userinfo)
+        .decode_utf8_lossy()
+        .to_string();
+    if let Some((user, pass)) = split_userinfo_pair(&percent_decoded) {
+        return (user.to_string(), pass.to_string());
+    }
+
+    if let Some(decoded) = decode_base64_userinfo(&percent_decoded) {
+        if let Some((user, pass)) = split_userinfo_pair(&decoded) {
+            return (user.to_string(), pass.to_string());
+        }
+    }
+
+    (percent_decoded, String::new())
+}
+
+fn split_userinfo_pair(userinfo: &str) -> Option<(&str, &str)> {
+    userinfo.split_once(':')
+}
+
+fn decode_base64_userinfo(userinfo: &str) -> Option<String> {
+    let encodings = [
+        &base64::engine::general_purpose::STANDARD,
+        &base64::engine::general_purpose::STANDARD_NO_PAD,
+        &base64::engine::general_purpose::URL_SAFE,
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+    ];
+
+    for encoding in encodings {
+        if let Ok(decoded) = encoding.decode(userinfo.trim()) {
+            if let Ok(decoded_str) = String::from_utf8(decoded) {
+                return Some(decoded_str);
+            }
+        }
+    }
+
+    None
+}
+
 fn parse_query(query: &str) -> std::collections::HashMap<String, String> {
     let mut map = std::collections::HashMap::new();
     if query.is_empty() {
@@ -508,5 +546,83 @@ fn apply_transport(
             });
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_uri;
+
+    fn outbound_auth_fields(uri: &str) -> (Option<String>, Option<String>) {
+        let proxy = parse_uri(uri).expect("uri should parse");
+        let username = proxy
+            .singbox_outbound
+            .get("username")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let password = proxy
+            .singbox_outbound
+            .get("password")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        (username, password)
+    }
+
+    #[test]
+    fn parse_socks_keeps_plaintext_userinfo_behavior() {
+        let (username, password) =
+            outbound_auth_fields("socks5://ry:62132@100.99.99.1:20000#oracle-de-lite1-v4");
+
+        assert_eq!(username.as_deref(), Some("ry"));
+        assert_eq!(password.as_deref(), Some("62132"));
+    }
+
+    #[test]
+    fn parse_socks_decodes_percent_encoded_userinfo() {
+        let (username, password) =
+            outbound_auth_fields("socks5://ry%3A62132@100.99.99.1:20000#oracle-de-lite1-v4");
+
+        assert_eq!(username.as_deref(), Some("ry"));
+        assert_eq!(password.as_deref(), Some("62132"));
+    }
+
+    #[test]
+    fn parse_socks_decodes_percent_encoded_base64_userinfo() {
+        let (username, password) =
+            outbound_auth_fields("socks5://cnk6NjIxMzI%3D@100.99.99.1:20000#oracle-de-lite1-v4");
+
+        assert_eq!(username.as_deref(), Some("ry"));
+        assert_eq!(password.as_deref(), Some("62132"));
+    }
+
+    #[test]
+    fn parse_socks_keeps_username_only_fallback_when_decoding_fails() {
+        let (username, password) =
+            outbound_auth_fields("socks5://encoded-user@100.99.99.1:20000#oracle-de-lite1-v4");
+
+        assert_eq!(username.as_deref(), Some("encoded-user"));
+        assert_eq!(password.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn parse_socks_supports_bracketed_ipv6_host() {
+        let proxy = parse_uri("socks5://user:pass@[2001:db8::1]:1080#ipv6-socks")
+            .expect("uri should parse");
+
+        assert_eq!(proxy.server, "2001:db8::1");
+        assert_eq!(proxy.port, 1080);
+        assert_eq!(proxy.singbox_outbound.get("server").and_then(|v| v.as_str()), Some("2001:db8::1"));
+        assert_eq!(proxy.singbox_outbound.get("server_port").and_then(|v| v.as_u64()), Some(1080));
+    }
+
+    #[test]
+    fn parse_http_supports_bracketed_ipv6_host() {
+        let proxy = parse_uri("http://user:pass@[2001:db8::1]:8080")
+            .expect("uri should parse");
+
+        assert_eq!(proxy.server, "2001:db8::1");
+        assert_eq!(proxy.port, 8080);
+        assert_eq!(proxy.singbox_outbound.get("server").and_then(|v| v.as_str()), Some("2001:db8::1"));
+        assert_eq!(proxy.singbox_outbound.get("server_port").and_then(|v| v.as_u64()), Some(8080));
     }
 }
