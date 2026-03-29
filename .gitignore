@@ -12,6 +12,7 @@
 /sing-box-zenproxy/sing-box-windows-*
 
 # IDE / OS
+.worktrees/
 .claude/
 .gemini/
 .vscode/
