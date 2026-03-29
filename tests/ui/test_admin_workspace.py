@@ -14,6 +14,12 @@ class AdminWorkspaceTest(unittest.TestCase):
     def load_html(self) -> str:
         return ADMIN_HTML.read_text(encoding="utf-8")
 
+    def proxy_table_header_html(self) -> str:
+        html = self.load_html()
+        match = re.search(r"<thead><tr>(.*?)</tr></thead>\s*<tbody id=\"proxy-table\">", html, re.S)
+        self.assertIsNotNone(match)
+        return match.group(1)
+
     def test_workspace_shell_exists(self) -> None:
         html = self.load_html()
         self.assertIn('id="proxy-workspace"', html)
@@ -42,6 +48,26 @@ class AdminWorkspaceTest(unittest.TestCase):
         self.assertIn("function renderWorkspaceToolbar(", html)
         self.assertIn("当前筛选", html)
         self.assertIn("已选", html)
+
+    def test_proxy_table_headers_match_workspace_design(self) -> None:
+        header_html = self.proxy_table_header_html()
+        self.assertIn(">节点信息<", header_html)
+        self.assertIn(">端口 / 错误<", header_html)
+        self.assertIn(">质量标签<", header_html)
+        self.assertNotIn(">类型<", header_html)
+        self.assertNotIn(">服务器<", header_html)
+        self.assertNotIn(">IP<", header_html)
+        self.assertNotIn(">IP族<", header_html)
+        self.assertNotIn(">国家<", header_html)
+        self.assertNotIn(">GPT<", header_html)
+        self.assertNotIn(">Google<", header_html)
+        self.assertNotIn(">住宅<", header_html)
+
+    def test_workspace_uses_more_actions_and_unknown_state_labels(self) -> None:
+        html = self.load_html()
+        self.assertIn("更多", html)
+        self.assertIn("未质检", html)
+        self.assertIn("IP族未知", html)
 
     def test_inline_script_has_valid_js_syntax(self) -> None:
         html = self.load_html()

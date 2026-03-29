@@ -46,13 +46,23 @@ body { font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var
 .btn-xs.btn-info { background:#3b82f6; color:#fff; border-color:#3b82f6;}
 .btn-xs.btn-info:hover { opacity:.85; }
 .btn-xs:disabled { opacity:.4; cursor:default; pointer-events:none; }
-.actions-cell { display:flex; gap:4px; min-width:300px; }
+.actions-cell { display:flex; gap:6px; align-items:center; flex-wrap:wrap; min-width:180px; }
 .actions-cell .btn-xs { min-width:64px; text-align:center; justify-content:center; }
+.cell-stack { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.cell-primary { color:var(--text-bright); font-weight:600; display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
+.cell-secondary { color:var(--text-dim); font-size:12px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
+.quality-tags { display:flex; gap:6px; flex-wrap:wrap; align-items:center; min-width:160px; }
+.quality-tag-muted { background:rgba(148,163,184,.12); color:var(--text-dim); }
+.row-actions-menu { position:relative; }
+.row-actions-menu summary { list-style:none; }
+.row-actions-menu summary::-webkit-details-marker { display:none; }
+.row-actions-popover { position:absolute; right:0; top:calc(100% + 6px); display:flex; flex-direction:column; gap:6px; min-width:120px; padding:8px; border:1px solid var(--border); border-radius:10px; background:var(--card); box-shadow:0 10px 24px rgba(0,0,0,.28); z-index:30; }
+.row-actions-popover .btn-xs { width:100%; }
 .spinner-xs { display:inline-block; width:12px; height:12px; border:2px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; margin-right:4px; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .btn-group { display:flex; gap:8px; flex-wrap:wrap; }
 table { width:100%; border-collapse:collapse; }
-th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); font-size:13px; white-space:nowrap; }
+th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); font-size:13px; white-space:nowrap; vertical-align:top; }
 th { color:var(--text-dim); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.5px; cursor:pointer; user-select:none; }
 th:hover { color:var(--text); }
 th.sorted-asc::after { content:' ↑'; }
@@ -285,18 +295,10 @@ tr:hover td { background:rgba(108,99,255,.03); }
                         <thead><tr>
                             <th style="width:32px"><input type="checkbox" id="select-all-page" onchange="togglePageSelection(this.checked)"></th>
                             <th onclick="sortBy('name')">名称</th>
-                            <th onclick="sortBy('type')">类型</th>
-                            <th onclick="sortBy('server')">服务器</th>
+                            <th onclick="sortBy('server')">节点信息</th>
                             <th onclick="sortBy('is_valid')">状态</th>
-                            <th onclick="sortBy('local_port')">端口</th>
-                            <th onclick="sortBy('error_count')">错误</th>
-                            <th>IP</th>
-                            <th>IP族</th>
-                            <th onclick="sortBy('country')">国家</th>
-                            <th onclick="sortBy('risk')">风险</th>
-                            <th>GPT</th>
-                            <th>Google</th>
-                            <th>住宅</th>
+                            <th onclick="sortBy('local_port')">端口 / 错误</th>
+                            <th onclick="sortBy('risk')">质量标签</th>
                             <th>操作</th>
                         </tr></thead>
                         <tbody id="proxy-table"></tbody>
@@ -669,6 +671,84 @@ function renderWorkspaceToolbar(filtered = getFilteredProxies()) {
   `;
 }
 
+function renderNodeInfoCell(p, q) {
+  const connection = `${esc(p.server)}:${p.port}`;
+  const secondaryParts = [];
+  if(q && q.ip_address) secondaryParts.push(esc(q.ip_address));
+  if(q && q.ip_family) secondaryParts.push(esc(q.ip_family.toUpperCase()));
+  else if(q && q.ip_address) secondaryParts.push('IP族未知');
+  if(q && q.country) secondaryParts.push(esc(q.country));
+  if(!secondaryParts.length) secondaryParts.push('等待质量数据');
+
+  return `
+    <div class="cell-stack">
+      <div class="cell-primary"><span class="badge badge-type">${esc(p.type)}</span><span title="${connection}">${connection}</span></div>
+      <div class="cell-secondary">${secondaryParts.join('<span>·</span>')}</div>
+    </div>
+  `;
+}
+
+function renderPortErrorCell(p) {
+  const portValue = p.local_port ? String(p.local_port) : '—';
+  const errorLabel = p.error_count > 0 ? `${p.error_count} 次错误` : '无错误';
+  return `
+    <div class="cell-stack">
+      <div class="cell-primary">${portValue}</div>
+      <div class="cell-secondary">${errorLabel}</div>
+    </div>
+  `;
+}
+
+function renderQualityTags(q) {
+  if(!q) {
+    return '<div class="quality-tags"><span class="badge quality-tag-muted">未质检</span></div>';
+  }
+
+  const tags = [];
+  if(q.ip_family) tags.push(`<span class="badge badge-type">${esc(q.ip_family.toUpperCase())}</span>`);
+  else if(q.ip_address) tags.push('<span class="badge quality-tag-muted">IP族未知</span>');
+
+  tags.push(`<span class="badge ${q.chatgpt ? 'badge-valid' : 'badge-invalid'}">GPT</span>`);
+  tags.push(`<span class="badge ${q.google ? 'badge-valid' : 'badge-invalid'}">Google</span>`);
+  tags.push(`<span class="badge ${q.is_residential ? 'badge-valid' : 'quality-tag-muted'}">住宅</span>`);
+
+  if(q.risk_level && q.risk_level !== 'Unknown') {
+    const cls = q.risk_score < 0.25 ? 'badge-risk-low' : q.risk_score < 0.5 ? 'badge-risk-med' : 'badge-risk-high';
+    tags.push(`<span class="badge ${cls}">${esc(q.risk_level)} ${(q.risk_score * 100).toFixed(0)}%</span>`);
+  } else {
+    tags.push('<span class="badge quality-tag-muted">风险未知</span>');
+  }
+
+  return `<div class="quality-tags">${tags.join('')}</div>`;
+}
+
+function renderRowActions(p, isChecking) {
+  const toggleBtn = p.is_disabled
+    ? `<button class="btn-xs btn-success" onclick="toggleProxy('${esc(p.id)}')">启用</button>`
+    : `<button class="btn-xs btn-warning" onclick="toggleProxy('${esc(p.id)}')">禁用</button>`;
+  const connectBtn = isChecking === 'validate'
+    ? `<button class="btn-xs btn-info" disabled><span class="spinner-xs"></span>检测中</button>`
+    : `<button class="btn-xs btn-info" onclick="validateSingle('${esc(p.id)}')" ${!canStartValidate() ? 'disabled' : ''}>连通测试</button>`;
+  const qualityBtn = isChecking === 'quality'
+    ? `<button class="btn-xs" disabled><span class="spinner-xs"></span>质检中</button>`
+    : `<button class="btn-xs" onclick="qualitySingle('${esc(p.id)}')" ${p.status !== 'valid' || !canStartQuality() ? 'disabled' : ''}>质量检测</button>`;
+  const deleteBtn = `<button class="btn-xs btn-danger" onclick="deleteProxy('${p.id}')">删除</button>`;
+
+  return `
+    <div class="actions-cell">
+      ${toggleBtn}
+      ${connectBtn}
+      <details class="row-actions-menu">
+        <summary class="btn-xs">更多</summary>
+        <div class="row-actions-popover">
+          ${qualityBtn}
+          ${deleteBtn}
+        </div>
+      </details>
+    </div>
+  `;
+}
+
 function updateSelectionUI(filtered = getFilteredProxies()) {
   const pageItems = getCurrentPageProxies(filtered);
   renderWorkspaceHeader(filtered);
@@ -726,16 +806,6 @@ function renderProxies() {
 
   tb.innerHTML = filtered.slice(start, end).map(p => {
     const q = p.quality;
-    const yes = '<span class="badge badge-valid">Y</span>';
-    const no = '<span class="badge badge-invalid">N</span>';
-    const na = '<span class="badge" style="background:rgba(148,163,184,.1);color:var(--text-dim)">-</span>';
-    
-    let riskBadge = na;
-    if(q && q.risk_level && q.risk_level!=='Unknown') {
-      const cls = q.risk_score<0.25?'badge-risk-low':q.risk_score<0.5?'badge-risk-med':'badge-risk-high';
-      riskBadge = `<span class="badge ${cls}">${q.risk_level} ${(q.risk_score*100).toFixed(0)}%</span>`;
-    }
-    
     const validityBadge = p.status==='valid'
         ? '<span class="badge badge-valid">有效</span>'
         : p.status==='untested'
@@ -744,33 +814,15 @@ function renderProxies() {
     const disabledBadge = p.is_disabled ? ' <span class="badge badge-disabled">已禁用</span>' : '';
     const statusBadge = validityBadge + disabledBadge;
     const isChecking = pendingActions[p.id];
-    const toggleBtn = p.is_disabled ? `<button class="btn-xs btn-success" onclick="toggleProxy('${esc(p.id)}')">启用</button>` : `<button class="btn-xs btn-warning" onclick="toggleProxy('${esc(p.id)}')">禁用</button>`;
-    const connectBtn = isChecking==='validate'
-        ? `<button class="btn-xs btn-info" disabled><span class="spinner-xs"></span>检测中</button>`
-        : `<button class="btn-xs btn-info" onclick="validateSingle('${esc(p.id)}')" ${!canStartValidate()?'disabled':''}>连通测试</button>`;
-    const qualityBtn = isChecking==='quality'
-        ? `<button class="btn-xs" disabled><span class="spinner-xs"></span>质检中</button>`
-        : `<button class="btn-xs" onclick="qualitySingle('${esc(p.id)}')" ${p.status !== 'valid' || !canStartQuality()?'disabled':''}>质量检测</button>`;
-    const deleteBtn = `<button class="btn-xs btn-danger" onclick="deleteProxy('${p.id}')">删除</button>`;
 
     return `<tr>
       <td><input type="checkbox" ${selectedIds.has(p.id)?'checked':''} onchange="toggleSelect('${esc(p.id)}')"></td>
-      <td title="${esc(p.name)}" style="max-width:150px;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</td>
-      <td><span class="badge badge-type">${esc(p.type)}</span></td>
-      <td title="${esc(p.server)}:${p.port}" style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${esc(p.server)}:${p.port}</td>
+      <td title="${esc(p.name)}" style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</td>
+      <td>${renderNodeInfoCell(p, q)}</td>
       <td>${statusBadge}</td>
-      <td>${p.local_port ? p.local_port : '<span style="color:var(--text-dim)">—</span>'}</td>
-      <td>${p.error_count}</td>
-      <td>${q&&q.ip_address?esc(q.ip_address):'-'}</td>
-      <td>${q&&q.ip_family?esc(q.ip_family.toUpperCase()):'-'}</td>
-      <td>${q&&q.country?esc(q.country):'-'}</td>
-      <td>${riskBadge}</td>
-      <td>${q?(q.chatgpt?yes:no):na}</td>
-      <td>${q?(q.google?yes:no):na}</td>
-      <td>${q?(q.is_residential?yes:no):na}</td>
-      <td><div class="actions-cell">
-          ${toggleBtn} ${connectBtn} ${qualityBtn} ${deleteBtn}
-      </div></td>
+      <td>${renderPortErrorCell(p)}</td>
+      <td>${renderQualityTags(q)}</td>
+      <td>${renderRowActions(p, isChecking)}</td>
     </tr>`;
   }).join('');
   renderPagination(filtered.length, totalPages);
