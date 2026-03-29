@@ -37,6 +37,7 @@ pub async fn client_fetch_proxies(
         residential: query.residential,
         risk_max: query.risk_max,
         country: query.country,
+        ip_family: query.ip_family,
         proxy_type: query.proxy_type,
         count: query.count,
         proxy_id: query.proxy_id,
@@ -82,6 +83,7 @@ fn client_proxy_to_json(p: &crate::pool::manager::PoolProxy) -> serde_json::Valu
         "local_port": p.local_port,
         "quality": p.quality.as_ref().map(|q| json!({
             "country": q.country,
+            "ip_family": q.ip_family,
             "chatgpt": q.chatgpt_accessible,
             "google": q.google_accessible,
             "is_residential": q.is_residential,
@@ -120,6 +122,7 @@ mod tests {
             error_count: 0,
             quality: Some(ProxyQualityInfo {
                 ip_address: Some("203.0.113.1".to_string()),
+                ip_family: Some("ipv4".to_string()),
                 country: Some("US".to_string()),
                 ip_type: Some("ISP".to_string()),
                 is_residential: false,

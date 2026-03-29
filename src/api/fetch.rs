@@ -22,6 +22,7 @@ pub struct FetchQuery {
     pub residential: bool,
     pub risk_max: Option<f64>,
     pub country: Option<String>,
+    pub ip_family: Option<String>,
     #[serde(rename = "type")]
     pub proxy_type: Option<String>,
     pub count: Option<usize>,
@@ -41,6 +42,7 @@ pub async fn fetch_proxies(
         residential: query.residential,
         risk_max: query.risk_max,
         country: query.country,
+        ip_family: query.ip_family,
         proxy_type: query.proxy_type,
         count: query.count,
         proxy_id: query.proxy_id,
@@ -123,6 +125,7 @@ fn proxy_to_json(p: &crate::pool::manager::PoolProxy) -> serde_json::Value {
         "error_count": p.error_count,
         "quality": p.quality.as_ref().map(|q| json!({
             "ip_address": q.ip_address,
+            "ip_family": q.ip_family,
             "country": q.country,
             "ip_type": q.ip_type,
             "is_residential": q.is_residential,

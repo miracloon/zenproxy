@@ -41,6 +41,7 @@ pub struct PoolProxy {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProxyQualityInfo {
     pub ip_address: Option<String>,
+    pub ip_family: Option<String>,
     pub country: Option<String>,
     pub ip_type: Option<String>,
     pub is_residential: bool,
@@ -63,8 +64,11 @@ impl From<ProxyQuality> for ProxyQualityInfo {
             .map(|n| n.min(u8::MAX as u64) as u8)
             .unwrap_or(0);
 
+        let ip_family = derive_ip_family(q.ip_address.as_deref());
+
         ProxyQualityInfo {
             ip_address: q.ip_address,
+            ip_family,
             country: q.country,
             ip_type: q.ip_type,
             is_residential: q.is_residential,
@@ -76,6 +80,15 @@ impl From<ProxyQuality> for ProxyQualityInfo {
             incomplete_retry_count,
         }
     }
+}
+
+pub(crate) fn derive_ip_family(ip_address: Option<&str>) -> Option<String> {
+    let ip = ip_address?;
+    let parsed = ip.parse::<std::net::IpAddr>().ok()?;
+    Some(match parsed {
+        std::net::IpAddr::V4(_) => "ipv4".to_string(),
+        std::net::IpAddr::V6(_) => "ipv6".to_string(),
+    })
 }
 
 pub struct ProxyPool {
@@ -276,6 +289,17 @@ impl ProxyPool {
                     true
                 }
             })
+            .filter(|p| {
+                if let Some(ref ip_family) = filter.ip_family {
+                    p.quality
+                        .as_ref()
+                        .and_then(|q| q.ip_family.as_ref())
+                        .map(|family| family.eq_ignore_ascii_case(ip_family))
+                        .unwrap_or(false)
+                } else {
+                    true
+                }
+            })
             .map(|p| p.value().clone())
             .collect();
 
@@ -301,6 +325,7 @@ pub struct ProxyFilter {
     pub residential: bool,
     pub risk_max: Option<f64>,
     pub country: Option<String>,
+    pub ip_family: Option<String>,
     #[serde(rename = "type")]
     pub proxy_type: Option<String>,
     pub count: Option<usize>,
@@ -356,6 +381,39 @@ mod tests {
         }
     }
 
+    fn sample_db_quality(proxy_id: &str, ip_address: Option<&str>) -> ProxyQuality {
+        ProxyQuality {
+            proxy_id: proxy_id.to_string(),
+            ip_address: ip_address.map(str::to_string),
+            country: Some("US".to_string()),
+            ip_type: Some("ISP".to_string()),
+            is_residential: false,
+            chatgpt_accessible: true,
+            google_accessible: true,
+            risk_score: 0.1,
+            risk_level: "Low".to_string(),
+            extra_json: None,
+            checked_at: "2026-03-28T00:00:00Z".to_string(),
+        }
+    }
+
+    fn sample_pool_proxy_with_quality(id: &str, ip_address: &str) -> PoolProxy {
+        PoolProxy {
+            id: id.to_string(),
+            subscription_id: "sub-1".to_string(),
+            name: format!("Proxy {id}"),
+            proxy_type: "vmess".to_string(),
+            server: "example.com".to_string(),
+            port: 443,
+            singbox_outbound: serde_json::json!({}),
+            status: ProxyStatus::Valid,
+            local_port: Some(10001),
+            error_count: 0,
+            quality: Some(ProxyQualityInfo::from(sample_db_quality(id, Some(ip_address)))),
+            is_disabled: false,
+        }
+    }
+
     #[test]
     fn set_disabled_preserves_existing_validation_status() {
         let pool = ProxyPool::new();
@@ -397,5 +455,31 @@ mod tests {
             .expect("invalid proxy should load");
         assert!(invalid_disabled.is_disabled);
         assert_eq!(invalid_disabled.status, ProxyStatus::Invalid);
+    }
+
+    #[test]
+    fn proxy_quality_info_derives_ip_family_from_ip_address() {
+        let ipv4 = ProxyQualityInfo::from(sample_db_quality("proxy-v4", Some("203.0.113.1")));
+        let ipv6 = ProxyQualityInfo::from(sample_db_quality("proxy-v6", Some("2001:db8::1")));
+
+        assert_eq!(ipv4.ip_family.as_deref(), Some("ipv4"));
+        assert_eq!(ipv6.ip_family.as_deref(), Some("ipv6"));
+    }
+
+    #[test]
+    fn filter_proxies_respects_ip_family() {
+        let pool = ProxyPool::new();
+        pool.add(sample_pool_proxy_with_quality("proxy-v4", "203.0.113.1"));
+        pool.add(sample_pool_proxy_with_quality("proxy-v6", "2001:db8::1"));
+
+        let filter = ProxyFilter {
+            ip_family: Some("ipv6".to_string()),
+            ..Default::default()
+        };
+
+        let proxies = pool.filter_proxies(&filter);
+        let ids: Vec<_> = proxies.iter().map(|p| p.id.as_str()).collect();
+
+        assert_eq!(ids, vec!["proxy-v6"]);
     }
 }
