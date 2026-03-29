@@ -16,7 +16,11 @@ class AdminWorkspaceTest(unittest.TestCase):
 
     def proxy_table_header_html(self) -> str:
         html = self.load_html()
-        match = re.search(r"<thead><tr>(.*?)</tr></thead>\s*<tbody id=\"proxy-table\">", html, re.S)
+        match = re.search(
+            r'id="proxy-workspace".*?<thead><tr>(.*?)</tr></thead>\s*<tbody id="proxy-table">',
+            html,
+            re.S,
+        )
         self.assertIsNotNone(match)
         return match.group(1)
 
@@ -54,6 +58,7 @@ class AdminWorkspaceTest(unittest.TestCase):
         self.assertIn(">节点信息<", header_html)
         self.assertIn(">端口 / 错误<", header_html)
         self.assertIn(">质量标签<", header_html)
+        self.assertNotIn('sortBy(\'risk\')', header_html)
         self.assertNotIn(">类型<", header_html)
         self.assertNotIn(">服务器<", header_html)
         self.assertNotIn(">IP<", header_html)
@@ -68,6 +73,18 @@ class AdminWorkspaceTest(unittest.TestCase):
         self.assertIn("更多", html)
         self.assertIn("未质检", html)
         self.assertIn("IP族未知", html)
+        self.assertNotIn("等待质量数据", html)
+
+    def test_toolbar_only_sticks_in_selected_mode(self) -> None:
+        html = self.load_html()
+        self.assertIn(".workspace-toolbar.is-selected", html)
+        self.assertIn("toolbar.classList.toggle('is-selected', selectionCount > 0)", html)
+
+    def test_row_actions_menu_is_not_absolute_popover(self) -> None:
+        html = self.load_html()
+        self.assertIn(".row-actions-popover { display:flex;", html)
+        self.assertNotIn("top:calc(100% + 6px)", html)
+        self.assertNotIn("right:0;", html)
 
     def test_inline_script_has_valid_js_syntax(self) -> None:
         html = self.load_html()
