@@ -811,7 +811,7 @@ docker compose -f docker-compose-remote.yml restart zenproxy-client
 1. 查看绑定列表：`curl http://127.0.0.1:9090/bindings`
 2. 若使用自动分配端口，优先验证 `127.0.0.1:60001`
 3. 若开启 `REMOTE_FETCH_SYNC_REMOTE_PORT=true`，先从 `/bindings` 取一个实际端口再验证
-4. 如果你本地保留了 `tests/smoke/client_check.py` 这类 smoke 脚本，可把 `PROXY_PORT` 改成目标端口后直接跑
+4. 仓库已提供 `tests/smoke/client_check.py`，把其中 `PROXY_PORT` 改成目标端口后，可执行 `uv run python tests/smoke/client_check.py`
 
 ---
 

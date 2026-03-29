@@ -1,0 +1,11 @@
+[project]
+name = "zenproxy"
+version = "0.38"
+description = "ZenProxy"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.12.15",
+    "requests>=2.32.5",
+]
+
