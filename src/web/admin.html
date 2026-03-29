@@ -122,13 +122,10 @@ tr:hover td { background:rgba(108,99,255,.03); }
 .workspace-summary { display:flex; gap:8px; flex-wrap:wrap; color:var(--text-dim); font-size:13px; }
 .workspace-summary-chip { padding:4px 10px; border-radius:999px; background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.12); }
 .workspace-filters { margin-bottom:12px; }
-.workspace-toolbar { display:flex; gap:16px; align-items:flex-start; justify-content:space-between; margin-bottom:16px; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:rgba(15,17,23,.55); }
+.workspace-toolbar { display:flex; gap:16px; align-items:flex-start; justify-content:space-between; margin-bottom:16px; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:rgba(15,17,23,.75); position:sticky; top:16px; z-index:10; backdrop-filter:blur(10px); }
 .workspace-toolbar-meta { display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0; }
 .workspace-toolbar-actions { display:flex; justify-content:flex-end; flex:1; }
 .workspace-toolbar .selection-toolbar { margin-bottom:0; }
-.workspace-toolbar .action-grid { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:0; }
-.workspace-toolbar .action-zone { padding:0; border:none; background:transparent; }
-.workspace-toolbar .action-zone .section-title { display:none; }
 
 /* Admin access denied */
 .access-denied { text-align: center; padding: 100px 20px; }
@@ -142,6 +139,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
   .workspace-header,
   .workspace-toolbar { flex-direction:column; }
   .workspace-toolbar-actions { width:100%; justify-content:flex-start; }
+  .workspace-toolbar { position:static; backdrop-filter:none; }
 }
 </style>
 </head>
@@ -239,10 +237,7 @@ tr:hover td { background:rgba(108,99,255,.03); }
                             <span>代理列表</span>
                             <span id="proxy-count" style="font-weight:400;color:var(--text-dim)"></span>
                         </div>
-                        <div class="workspace-summary">
-                            <span class="workspace-summary-chip">节点工作台</span>
-                            <span class="workspace-summary-chip">筛选、选择与操作集中在同一区域</span>
-                        </div>
+                        <div class="workspace-summary" id="proxy-workspace-summary"></div>
                     </div>
                     <div class="type-chips" id="workspace-type-chips"></div>
                 </div>
@@ -282,45 +277,8 @@ tr:hover td { background:rgba(108,99,255,.03); }
                     </select>
                 </div>
                 <div class="workspace-toolbar" id="proxy-toolbar">
-                    <div class="workspace-toolbar-meta selection-toolbar" id="proxy-toolbar-meta">
-                        <button class="btn btn-sm" onclick="selectAll()">全选 (<span id="filtered-count">0</span>条)</button>
-                        <button class="btn btn-sm" onclick="selectPage()">选本页</button>
-                        <button class="btn btn-sm" onclick="clearSelection()" style="color:var(--text-dim)">取消选择</button>
-                        <span class="selection-summary">已选 <strong id="selection-count">0</strong> 个</span>
-                    </div>
-                    <div class="workspace-toolbar-actions" id="proxy-toolbar-actions">
-                        <div class="action-grid">
-                            <div class="action-zone">
-                                <div class="btn-group">
-                                    <button class="btn btn-success btn-sm selection-action" disabled onclick="batchSelected('enable')">启用选中</button>
-                                    <button class="btn btn-warn btn-sm selection-action" disabled onclick="batchSelected('disable')">禁用选中</button>
-                                    <button class="btn btn-primary btn-sm selection-action" disabled onclick="batchSelected('validate')">验证选中</button>
-                                    <button class="btn btn-sm selection-action" disabled onclick="batchSelected('quality')">质检选中</button>
-                                    <button class="btn btn-danger btn-sm selection-action" disabled onclick="batchSelected('delete')">删除选中</button>
-                                </div>
-                            </div>
-                            <div class="action-zone">
-                                <div class="btn-group">
-                                    <button class="btn btn-primary btn-sm" onclick="triggerValidation()">验证全部</button>
-                                    <button class="btn btn-primary btn-sm" onclick="batchValidateDisabled()">验证未启用</button>
-                                    <button class="btn btn-primary btn-sm" onclick="batchValidateInvalid()">验证无效</button>
-                                    <button class="btn btn-sm" onclick="triggerQualityCheck()">质检全部</button>
-                                </div>
-                            </div>
-                            <div class="action-zone">
-                                <div class="btn-group">
-                                    <button class="btn btn-success btn-sm" onclick="batchEnableValid()">一键启用有效</button>
-                                    <button class="btn btn-warn btn-sm" onclick="batchDisableInvalid()">一键禁用无效</button>
-                                </div>
-                            </div>
-                            <div class="action-zone danger-zone">
-                                <div class="btn-group">
-                                    <button class="btn btn-danger btn-sm" onclick="cleanupProxies()">清理无效</button>
-                                    <button class="btn btn-danger btn-sm" onclick="cleanupUselessProxies()">清理三不通</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="workspace-toolbar-meta selection-toolbar" id="proxy-toolbar-meta"></div>
+                    <div class="workspace-toolbar-actions" id="proxy-toolbar-actions"></div>
                 </div>
                 <div class="card">
                     <table>
@@ -654,16 +612,67 @@ function getCurrentPageProxies(filtered = getFilteredProxies()) {
   return filtered.slice(start, start + pageSize);
 }
 
+function renderWorkspaceHeader(filtered = getFilteredProxies()) {
+  const summary = document.getElementById('proxy-workspace-summary');
+  if(!summary) return;
+  const total = allProxies.length;
+  const filteredCount = filtered.length;
+  const selectedCount = selectedIds.size;
+  const summaryParts = [
+    `<span class="workspace-summary-chip">当前筛选 ${filteredCount} / ${total}</span>`,
+    `<span class="workspace-summary-chip">${selectedCount ? `已选 ${selectedCount} 个节点` : '未选中节点'}</span>`,
+    '<span class="workspace-summary-chip">支持 IPv4 / IPv6 质量筛选</span>',
+  ];
+  summary.innerHTML = summaryParts.join('');
+}
+
+function renderWorkspaceToolbar(filtered = getFilteredProxies()) {
+  const meta = document.getElementById('proxy-toolbar-meta');
+  const actions = document.getElementById('proxy-toolbar-actions');
+  if(!meta || !actions) return;
+
+  const filteredCount = filtered.length;
+  const selectionCount = selectedIds.size;
+
+  meta.innerHTML = `
+    <span class="workspace-summary-chip">当前筛选 <strong id="filtered-count">${filteredCount}</strong> 条</span>
+    <button class="btn btn-sm" onclick="selectAll()">全选筛选结果</button>
+    <button class="btn btn-sm" onclick="selectPage()">选本页</button>
+    ${selectionCount ? `<button class="btn btn-sm" onclick="clearSelection()" style="color:var(--text-dim)">取消选择</button>` : ''}
+    <span class="selection-summary">${selectionCount ? `已选 <strong id="selection-count">${selectionCount}</strong> 个` : '已选 <strong id="selection-count">0</strong> 个'}</span>
+  `;
+
+  if(selectionCount > 0) {
+    actions.innerHTML = `
+      <div class="btn-group">
+        <button class="btn btn-success btn-sm selection-action" onclick="batchSelected('enable')">启用选中</button>
+        <button class="btn btn-warn btn-sm selection-action" onclick="batchSelected('disable')">禁用选中</button>
+        <button class="btn btn-primary btn-sm selection-action" onclick="batchSelected('validate')">验证选中</button>
+        <button class="btn btn-sm selection-action" onclick="batchSelected('quality')">质检选中</button>
+        <button class="btn btn-danger btn-sm selection-action" onclick="batchSelected('delete')">删除选中</button>
+      </div>
+    `;
+    return;
+  }
+
+  actions.innerHTML = `
+    <div class="btn-group">
+      <button class="btn btn-primary btn-sm" onclick="triggerValidation()">验证全部</button>
+      <button class="btn btn-primary btn-sm" onclick="batchValidateDisabled()">验证未启用</button>
+      <button class="btn btn-primary btn-sm" onclick="batchValidateInvalid()">验证无效</button>
+      <button class="btn btn-sm" onclick="triggerQualityCheck()">质检全部</button>
+      <button class="btn btn-success btn-sm" onclick="batchEnableValid()">一键启用有效</button>
+      <button class="btn btn-warn btn-sm" onclick="batchDisableInvalid()">一键禁用无效</button>
+      <button class="btn btn-danger btn-sm" onclick="cleanupProxies()">清理无效</button>
+      <button class="btn btn-danger btn-sm" onclick="cleanupUselessProxies()">清理三不通</button>
+    </div>
+  `;
+}
+
 function updateSelectionUI(filtered = getFilteredProxies()) {
-  const count = selectedIds.size;
   const pageItems = getCurrentPageProxies(filtered);
-  const selectionCountEl = document.getElementById('selection-count');
-  const filteredCountEl = document.getElementById('filtered-count');
-  if(selectionCountEl) selectionCountEl.textContent = count;
-  if(filteredCountEl) filteredCountEl.textContent = filtered.length;
-  document.querySelectorAll('.selection-action').forEach(btn => {
-    btn.disabled = count === 0;
-  });
+  renderWorkspaceHeader(filtered);
+  renderWorkspaceToolbar(filtered);
   const selectAllPage = document.getElementById('select-all-page');
   if(selectAllPage) {
     const selectedOnPage = pageItems.filter(p => selectedIds.has(p.id)).length;

@@ -36,6 +36,13 @@ class AdminWorkspaceTest(unittest.TestCase):
         self.assertIn('id="workspace-type-chips"', html)
         self.assertIn('id="proxy-filter-bar"', html)
 
+    def test_workspace_scripts_define_header_and_toolbar_renderers(self) -> None:
+        html = self.load_html()
+        self.assertIn("function renderWorkspaceHeader(", html)
+        self.assertIn("function renderWorkspaceToolbar(", html)
+        self.assertIn("当前筛选", html)
+        self.assertIn("已选", html)
+
     def test_inline_script_has_valid_js_syntax(self) -> None:
         html = self.load_html()
         match = re.search(r"<script>(.*)</script>", html, re.S)
