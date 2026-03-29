@@ -147,6 +147,7 @@ GET /api/fetch?api_key=xxx&count=5&country=US&chatgpt=true
 | `chatgpt` | bool | false | 仅返回支持 ChatGPT 的代理 |
 | `google` | bool | false | 仅返回支持 Google 的代理 |
 | `residential` | bool | false | 仅返回住宅 IP 代理 |
+| `ip_family` | string | - | 仅返回 `ipv4` 或 `ipv6` 出口 |
 | `risk_max` | float | - | 最大风险评分（0~1） |
 | `country` | string | - | 国家代码过滤（如 US、JP） |
 | `type` | string | - | 代理类型过滤（vmess、vless、trojan 等） |
@@ -166,6 +167,7 @@ GET /api/fetch?api_key=xxx&count=5&country=US&chatgpt=true
       "status": "valid",
       "quality": {
         "ip_address": "5.6.7.8",
+        "ip_family": "ipv4",
         "country": "US",
         "ip_type": "ISP",
         "is_residential": true,
@@ -248,6 +250,7 @@ POST /api/relay?api_key=xxx&url=https://api.example.com/data&method=POST&country
 | `chatgpt` | bool | false | ChatGPT 可用过滤 |
 | `google` | bool | false | Google 可用过滤 |
 | `residential` | bool | false | 住宅 IP 过滤 |
+| `ip_family` | string | - | `ipv4` / `ipv6` 过滤 |
 | `risk_max` | float | - | 最大风险评分 |
 | `country` | string | - | 国家过滤 |
 | `type` | string | - | 代理类型过滤 |
@@ -343,6 +346,9 @@ GET /api/proxies?api_key=xxx
 
 通过 ip-api.com 和 ipinfo.io 获取代理的 IP 信息、地理位置、风险评估。
 
+v0.39 起，质量结果补充 `ip_family` 字段，用于明确区分最终出口是 `ipv4` 还是 `ipv6`。
+这里的家族判断基于**实际探测到的出口 IP**，而不是基于上游节点填写的接入地址族。
+
 **检测内容：**
 | 项目 | 来源 | 说明 |
 |------|------|------|
@@ -353,6 +359,22 @@ GET /api/proxies?api_key=xxx
 | ChatGPT 可访问 | chatgpt.com | 检测是否被封锁 |
 | Google 可访问 | google.com/generate_204 | 检测连通性 |
 | 风险评分 | ip-api.com | proxy + hosting 综合评分 |
+
+### IPv6 支持边界
+
+- v0.39 支持 IPv6 上游节点导入、连通性验证、质量检测与 `ip_family` 展示/筛选
+- 若节点入口是 IPv4，但最终公网出口是 IPv6，则质量检测结果中的 `ip_family` 应记录为 `ipv6`
+- v0.39 **不**提供本地 `::1` / 双栈 listener；本地接入方式仍是 `127.0.0.1:端口`
+
+### SOCKS / HTTP 编码认证兼容
+
+v0.39 起，订阅导入路径会兼容以下 `userinfo` 形式：
+
+- 明文 `user:pass`
+- percent-encoded 后的 `user:pass`
+- percent-decode 后再 base64 / base64url 解码得到的 `user:pass`
+
+该兼容规则同时适用于 SOCKS 与 HTTP/HTTPS URI，目标是保证“逐个添加”与“订阅导入”落库结果一致。
 
 ### 服务端部署
 
