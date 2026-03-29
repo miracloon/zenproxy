@@ -115,6 +115,20 @@ tr:hover td { background:rgba(108,99,255,.03); }
 .input-sm { padding:4px 8px; font-size:12px; border-radius:4px; background:#0f1117; border:1px solid var(--border); color:var(--text); width: 100%; outline:none;}
 .input-sm:focus { border-color:var(--primary); }
 .url-cell { max-width:200px; overflow:hidden; text-overflow:ellipsis; }
+.workspace-shell { background:rgba(255,255,255,.02); border:1px solid var(--border); border-radius:16px; padding:20px; }
+.workspace-header { display:flex; gap:16px; align-items:flex-start; justify-content:space-between; margin-bottom:16px; }
+.workspace-title-block { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.workspace-title { font-size:18px; font-weight:700; color:var(--text-bright); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.workspace-summary { display:flex; gap:8px; flex-wrap:wrap; color:var(--text-dim); font-size:13px; }
+.workspace-summary-chip { padding:4px 10px; border-radius:999px; background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.12); }
+.workspace-filters { margin-bottom:12px; }
+.workspace-toolbar { display:flex; gap:16px; align-items:flex-start; justify-content:space-between; margin-bottom:16px; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:rgba(15,17,23,.55); }
+.workspace-toolbar-meta { display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0; }
+.workspace-toolbar-actions { display:flex; justify-content:flex-end; flex:1; }
+.workspace-toolbar .selection-toolbar { margin-bottom:0; }
+.workspace-toolbar .action-grid { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:0; }
+.workspace-toolbar .action-zone { padding:0; border:none; background:transparent; }
+.workspace-toolbar .action-zone .section-title { display:none; }
 
 /* Admin access denied */
 .access-denied { text-align: center; padding: 100px 20px; }
@@ -125,6 +139,9 @@ tr:hover td { background:rgba(108,99,255,.03); }
 @media(max-width:960px) {
   .action-grid { grid-template-columns:1fr; }
   .page-size-select { margin-left:0; }
+  .workspace-header,
+  .workspace-toolbar { flex-direction:column; }
+  .workspace-toolbar-actions { width:100%; justify-content:flex-start; }
 }
 </style>
 </head>
@@ -164,58 +181,6 @@ tr:hover td { background:rgba(108,99,255,.03); }
             <div class="stat-card"><div class="stat-value" id="s-chatgpt">-</div><div class="stat-label">ChatGPT</div></div>
             <div class="stat-card"><div class="stat-value" id="s-google">-</div><div class="stat-label">Google</div></div>
             <div class="stat-card"><div class="stat-value" id="s-residential">-</div><div class="stat-label">住宅IP</div></div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">操作</div>
-            <div class="action-grid">
-                <div class="action-zone">
-                    <div class="section-title">选中操作</div>
-                    <div class="selection-toolbar">
-                        <button class="btn btn-sm" onclick="selectAll()">全选 (<span id="filtered-count">0</span>条)</button>
-                        <button class="btn btn-sm" onclick="selectPage()">选本页</button>
-                        <button class="btn btn-sm" onclick="clearSelection()" style="color:var(--text-dim)">取消选择</button>
-                        <span class="selection-summary">已选 <strong id="selection-count">0</strong> 个</span>
-                    </div>
-                    <div class="btn-group">
-                        <button class="btn btn-success btn-sm selection-action" disabled onclick="batchSelected('enable')">启用选中</button>
-                        <button class="btn btn-warn btn-sm selection-action" disabled onclick="batchSelected('disable')">禁用选中</button>
-                        <button class="btn btn-primary btn-sm selection-action" disabled onclick="batchSelected('validate')">验证选中</button>
-                        <button class="btn btn-sm selection-action" disabled onclick="batchSelected('quality')">质检选中</button>
-                        <button class="btn btn-danger btn-sm selection-action" disabled onclick="batchSelected('delete')">删除选中</button>
-                    </div>
-                </div>
-                <div class="action-zone">
-                    <div class="section-title">验证与质检</div>
-                    <div class="btn-group">
-                        <button class="btn btn-primary btn-sm" onclick="triggerValidation()">验证全部</button>
-                        <button class="btn btn-primary btn-sm" onclick="batchValidateDisabled()">验证未启用</button>
-                        <button class="btn btn-primary btn-sm" onclick="batchValidateInvalid()">验证无效</button>
-                        <button class="btn btn-sm" onclick="triggerQualityCheck()">质检全部</button>
-                    </div>
-                </div>
-                <div class="action-zone">
-                    <div class="section-title">快捷操作</div>
-                    <div class="btn-group">
-                        <button class="btn btn-success btn-sm" onclick="batchEnableValid()">一键启用有效</button>
-                        <button class="btn btn-warn btn-sm" onclick="batchDisableInvalid()">一键禁用无效</button>
-                    </div>
-                </div>
-                <div class="action-zone danger-zone">
-                    <div class="section-title">清理</div>
-                    <div class="btn-group">
-                        <button class="btn btn-danger btn-sm" onclick="cleanupProxies()">清理无效</button>
-                        <button class="btn btn-danger btn-sm" onclick="cleanupUselessProxies()">清理三不通</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">类型分布</div>
-            <div class="card">
-                <div class="type-chips" id="type-chips"></div>
-            </div>
         </div>
 
         <!-- Add & List Subscriptions -->
@@ -266,68 +231,121 @@ tr:hover td { background:rgba(108,99,255,.03); }
         </div>
 
         <!-- Proxy Table -->
-        <div class="section">
-            <div class="section-title">
-                <span>代理列表 <span id="proxy-count" style="font-weight:400;color:var(--text-dim)"></span></span>
-            </div>
-            <div class="filter-bar">
-                <input id="f-search" placeholder="搜索名称/服务器..." oninput="currentPage=1;renderProxies()">
-                <select id="f-validity" onchange="currentPage=1;renderProxies()">
-                    <option value="">全部验证状态</option>
-                    <option value="valid">有效</option>
-                    <option value="invalid">无效</option>
-                    <option value="untested">待检测</option>
-                </select>
-                <select id="f-enabled" onchange="currentPage=1;renderProxies()">
-                    <option value="">全部启用状态</option>
-                    <option value="enabled">已启用</option>
-                    <option value="disabled">已禁用</option>
-                </select>
-                <select id="f-type" onchange="currentPage=1;renderProxies()">
-                    <option value="">全部类型</option>
-                    <option value="vmess">VMess</option>
-                    <option value="vless">VLESS</option>
-                    <option value="trojan">Trojan</option>
-                    <option value="shadowsocks">Shadowsocks</option>
-                    <option value="hysteria2">Hysteria2</option>
-                </select>
-                <select id="f-quality" onchange="currentPage=1;renderProxies()">
-                    <option value="">全部质量</option>
-                    <option value="chatgpt">ChatGPT 可用</option>
-                    <option value="google">Google 可用</option>
-                    <option value="residential">Residential</option>
-                    <option value="ipv4">IPv4 出口</option>
-                    <option value="ipv6">IPv6 出口</option>
-                </select>
-                <select id="f-pagesize" class="page-size-select" onchange="changePageSize()">
-                    <option value="30">每页 30</option>
-                    <option value="50">每页 50</option>
-                    <option value="100">每页 100</option>
-                </select>
-            </div>
-            <div class="card">
-                <table>
-                    <thead><tr>
-                        <th style="width:32px"><input type="checkbox" id="select-all-page" onchange="togglePageSelection(this.checked)"></th>
-                        <th onclick="sortBy('name')">名称</th>
-                        <th onclick="sortBy('type')">类型</th>
-                        <th onclick="sortBy('server')">服务器</th>
-                        <th onclick="sortBy('is_valid')">状态</th>
-                        <th onclick="sortBy('local_port')">端口</th>
-                        <th onclick="sortBy('error_count')">错误</th>
-                        <th>IP</th>
-                        <th>IP族</th>
-                        <th onclick="sortBy('country')">国家</th>
-                        <th onclick="sortBy('risk')">风险</th>
-                        <th>GPT</th>
-                        <th>Google</th>
-                        <th>住宅</th>
-                        <th>操作</th>
-                    </tr></thead>
-                    <tbody id="proxy-table"></tbody>
-                </table>
-                <div class="empty" id="proxy-empty">暂无代理</div>
-                <div class="pagination" id="proxy-pagination"></div>
+        <div class="section" id="proxy-workspace">
+            <div class="workspace-shell">
+                <div class="workspace-header" id="proxy-workspace-header">
+                    <div class="workspace-title-block">
+                        <div class="workspace-title">
+                            <span>代理列表</span>
+                            <span id="proxy-count" style="font-weight:400;color:var(--text-dim)"></span>
+                        </div>
+                        <div class="workspace-summary">
+                            <span class="workspace-summary-chip">节点工作台</span>
+                            <span class="workspace-summary-chip">筛选、选择与操作集中在同一区域</span>
+                        </div>
+                    </div>
+                    <div class="type-chips" id="workspace-type-chips"></div>
+                </div>
+                <div class="filter-bar workspace-filters" id="proxy-filter-bar">
+                    <input id="f-search" placeholder="搜索名称/服务器..." oninput="currentPage=1;renderProxies()">
+                    <select id="f-validity" onchange="currentPage=1;renderProxies()">
+                        <option value="">全部验证状态</option>
+                        <option value="valid">有效</option>
+                        <option value="invalid">无效</option>
+                        <option value="untested">待检测</option>
+                    </select>
+                    <select id="f-enabled" onchange="currentPage=1;renderProxies()">
+                        <option value="">全部启用状态</option>
+                        <option value="enabled">已启用</option>
+                        <option value="disabled">已禁用</option>
+                    </select>
+                    <select id="f-type" onchange="currentPage=1;renderProxies()">
+                        <option value="">全部类型</option>
+                        <option value="vmess">VMess</option>
+                        <option value="vless">VLESS</option>
+                        <option value="trojan">Trojan</option>
+                        <option value="shadowsocks">Shadowsocks</option>
+                        <option value="hysteria2">Hysteria2</option>
+                    </select>
+                    <select id="f-quality" onchange="currentPage=1;renderProxies()">
+                        <option value="">全部质量</option>
+                        <option value="chatgpt">ChatGPT 可用</option>
+                        <option value="google">Google 可用</option>
+                        <option value="residential">Residential</option>
+                        <option value="ipv4">IPv4 出口</option>
+                        <option value="ipv6">IPv6 出口</option>
+                    </select>
+                    <select id="f-pagesize" class="page-size-select" onchange="changePageSize()">
+                        <option value="30">每页 30</option>
+                        <option value="50">每页 50</option>
+                        <option value="100">每页 100</option>
+                    </select>
+                </div>
+                <div class="workspace-toolbar" id="proxy-toolbar">
+                    <div class="workspace-toolbar-meta selection-toolbar" id="proxy-toolbar-meta">
+                        <button class="btn btn-sm" onclick="selectAll()">全选 (<span id="filtered-count">0</span>条)</button>
+                        <button class="btn btn-sm" onclick="selectPage()">选本页</button>
+                        <button class="btn btn-sm" onclick="clearSelection()" style="color:var(--text-dim)">取消选择</button>
+                        <span class="selection-summary">已选 <strong id="selection-count">0</strong> 个</span>
+                    </div>
+                    <div class="workspace-toolbar-actions" id="proxy-toolbar-actions">
+                        <div class="action-grid">
+                            <div class="action-zone">
+                                <div class="btn-group">
+                                    <button class="btn btn-success btn-sm selection-action" disabled onclick="batchSelected('enable')">启用选中</button>
+                                    <button class="btn btn-warn btn-sm selection-action" disabled onclick="batchSelected('disable')">禁用选中</button>
+                                    <button class="btn btn-primary btn-sm selection-action" disabled onclick="batchSelected('validate')">验证选中</button>
+                                    <button class="btn btn-sm selection-action" disabled onclick="batchSelected('quality')">质检选中</button>
+                                    <button class="btn btn-danger btn-sm selection-action" disabled onclick="batchSelected('delete')">删除选中</button>
+                                </div>
+                            </div>
+                            <div class="action-zone">
+                                <div class="btn-group">
+                                    <button class="btn btn-primary btn-sm" onclick="triggerValidation()">验证全部</button>
+                                    <button class="btn btn-primary btn-sm" onclick="batchValidateDisabled()">验证未启用</button>
+                                    <button class="btn btn-primary btn-sm" onclick="batchValidateInvalid()">验证无效</button>
+                                    <button class="btn btn-sm" onclick="triggerQualityCheck()">质检全部</button>
+                                </div>
+                            </div>
+                            <div class="action-zone">
+                                <div class="btn-group">
+                                    <button class="btn btn-success btn-sm" onclick="batchEnableValid()">一键启用有效</button>
+                                    <button class="btn btn-warn btn-sm" onclick="batchDisableInvalid()">一键禁用无效</button>
+                                </div>
+                            </div>
+                            <div class="action-zone danger-zone">
+                                <div class="btn-group">
+                                    <button class="btn btn-danger btn-sm" onclick="cleanupProxies()">清理无效</button>
+                                    <button class="btn btn-danger btn-sm" onclick="cleanupUselessProxies()">清理三不通</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <table>
+                        <thead><tr>
+                            <th style="width:32px"><input type="checkbox" id="select-all-page" onchange="togglePageSelection(this.checked)"></th>
+                            <th onclick="sortBy('name')">名称</th>
+                            <th onclick="sortBy('type')">类型</th>
+                            <th onclick="sortBy('server')">服务器</th>
+                            <th onclick="sortBy('is_valid')">状态</th>
+                            <th onclick="sortBy('local_port')">端口</th>
+                            <th onclick="sortBy('error_count')">错误</th>
+                            <th>IP</th>
+                            <th>IP族</th>
+                            <th onclick="sortBy('country')">国家</th>
+                            <th onclick="sortBy('risk')">风险</th>
+                            <th>GPT</th>
+                            <th>Google</th>
+                            <th>住宅</th>
+                            <th>操作</th>
+                        </tr></thead>
+                        <tbody id="proxy-table"></tbody>
+                    </table>
+                    <div class="empty" id="proxy-empty">暂无代理</div>
+                    <div class="pagination" id="proxy-pagination"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -542,7 +560,10 @@ async function loadStats() {
   document.getElementById('s-untested').textContent = d.untested_proxies??0;
   document.getElementById('s-subs').textContent = d.subscriptions??0;
   document.getElementById('s-quality').textContent = d.quality_checked??0;
-  if(d.by_type) document.getElementById('type-chips').innerHTML = Object.entries(d.by_type).map(([k,v])=>`<span class="type-chip">${esc(k)}: ${v}</span>`).join('');
+  const workspaceTypeChips = document.getElementById('workspace-type-chips');
+  if(d.by_type && workspaceTypeChips) {
+    workspaceTypeChips.innerHTML = Object.entries(d.by_type).map(([k,v])=>`<span class="type-chip">${esc(k)}: ${v}</span>`).join('');
+  }
 }
 
 function updateLocalQualityStats() {

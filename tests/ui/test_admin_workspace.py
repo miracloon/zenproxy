@@ -27,15 +27,14 @@ class AdminWorkspaceTest(unittest.TestCase):
         self.assertNotIn('section-title">操作<', html)
         self.assertNotIn('section-title">类型分布<', html)
 
-    def test_proxy_table_headers_match_workspace_design(self) -> None:
+    def test_workspace_section_follows_subscriptions(self) -> None:
         html = self.load_html()
-        self.assertIn(">节点信息<", html)
-        self.assertIn(">端口 / 错误<", html)
-        self.assertIn(">质量标签<", html)
-        self.assertNotIn(">IP族<", html)
-        self.assertNotIn(">GPT<", html)
-        self.assertNotIn(">Google<", html)
-        self.assertNotIn(">住宅<", html)
+        self.assertLess(html.index('section-title">订阅源<'), html.index('id="proxy-workspace"'))
+
+    def test_workspace_moves_type_chips_into_header(self) -> None:
+        html = self.load_html()
+        self.assertIn('id="workspace-type-chips"', html)
+        self.assertIn('id="proxy-filter-bar"', html)
 
     def test_inline_script_has_valid_js_syntax(self) -> None:
         html = self.load_html()
