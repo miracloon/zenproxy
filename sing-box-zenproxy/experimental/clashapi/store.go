@@ -199,6 +199,25 @@ func (ps *ProxyStore) ClearProxies() int {
 	return count
 }
 
+func (ps *ProxyStore) RemoveBySource(source string) int {
+	ps.mu.Lock()
+	var kept []StoredProxy
+	removed := 0
+	for _, p := range ps.data.Proxies {
+		if p.Source == source {
+			removed++
+		} else {
+			kept = append(kept, p)
+		}
+	}
+	ps.data.Proxies = kept
+	ps.mu.Unlock()
+	if removed > 0 {
+		ps.save()
+	}
+	return removed
+}
+
 func (ps *ProxyStore) SetLocalPort(proxyID string, port uint16) {
 	ps.mu.Lock()
 	for i := range ps.data.Proxies {

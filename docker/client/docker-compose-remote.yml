@@ -10,3 +10,13 @@ services:
     environment:
       - PROXY_PORT_START=60001
       - PROXY_PORT_END=65535
+      - REMOTE_FETCH_ENABLED=true
+      - REMOTE_FETCH_SERVER=https://your-zenproxy-server.example.com
+      - REMOTE_FETCH_API_KEY=your-zenproxy-api-key
+      - REMOTE_FETCH_ALL=false
+      - REMOTE_FETCH_COUNT=10
+      - REMOTE_FETCH_AUTO_BIND=true
+      - REMOTE_FETCH_COUNTRY=
+      - REMOTE_FETCH_TYPE=
+      - REMOTE_FETCH_CHATGPT=false
+      - REMOTE_FETCH_SYNC_REMOTE_PORT=

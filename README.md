@@ -188,7 +188,11 @@ GET /api/fetch?api_key=xxx&count=5&country=US&chatgpt=true
 GET /api/client/fetch?api_key=xxx&count=100&country=US&type=vmess
 ```
 
-参数同 `/api/fetch`，默认 `count=10`。
+参数同 `/api/fetch`，并额外支持 `all=true`。
+
+- 未提供 `all` 时，默认 `count=10`
+- `all=true` 时忽略 `count`，返回所有满足筛选条件的代理
+- 该接口只返回可供客户端直接使用的代理：已验证有效、未禁用、且已存在服务端本地端口
 
 **响应示例：**
 
@@ -542,6 +546,7 @@ curl -X POST http://127.0.0.1:9090/fetch \
   -d '{
     "server": "https://proxy.zenapi.top",
     "api_key": "your-zenproxy-api-key",
+    "all": false,
     "count": 100,
     "country": "US",
     "type": "vmess",
@@ -553,11 +558,19 @@ curl -X POST http://127.0.0.1:9090/fetch \
 |------|------|--------|------|
 | `server` | string | **必填** | ZenProxy Server 地址 |
 | `api_key` | string | **必填** | ZenProxy 用户 API Key |
-| `count` | int | 10 | 获取代理数量 |
+| `all` | bool | false | `true` 时全量拉取，忽略 `count` |
+| `count` | int | 10 | 获取代理数量；仅在 `all=false` 时生效 |
 | `country` | string | - | 国家过滤 |
 | `chatgpt` | bool | false | ChatGPT 可用过滤 |
 | `type` | string | - | 代理类型过滤 |
 | `auto_bind` | bool | false | 获取后自动创建绑定 |
+| `sync_remote_port` | bool | - | 覆盖全局 `SYNC_REMOTE_PORT`，按次决定是否使用远端端口同步 |
+
+**规则说明：**
+
+- `all=true` 时客户端会请求服务端 `GET /api/client/fetch?all=true`
+- `country` / `type` 仍为单值过滤，不支持逗号多选
+- `auto_bind=true` 时，拉取完成后会立即创建本地绑定；`false` 时只写入 store
 
 **响应：**
 
@@ -751,7 +764,54 @@ sing-box 最小配置（`config.json`）：
 
 ### 数据持久化
 
-代理和订阅数据存储在 `data/store.json`，重启 sing-box 后自动加载。绑定（inbound/outbound 端口映射）不持久化，重启后需要重新调用 `/bindings/batch` 创建。
+代理和订阅数据存储在 `data/store.json`，重启 sing-box 后自动加载。绑定（inbound/outbound 端口映射）不持久化；如果你使用的是 remote 自动拉取并开启 `REMOTE_FETCH_AUTO_BIND=true`，则客户端每次启动后会自动重新拉取并重建绑定。
+
+### remote 模式自动拉取部署
+
+使用 `docker/client/docker-compose-remote.yml` 时，客户端支持启动后自动从远端 ZenProxy Server 拉取代理。
+
+关键环境变量：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `REMOTE_FETCH_ENABLED` | true | remote 模式默认自动拉取 |
+| `REMOTE_FETCH_SERVER` | - | 远端 ZenProxy Server 地址 |
+| `REMOTE_FETCH_API_KEY` | - | ZenProxy 用户 API Key |
+| `REMOTE_FETCH_ALL` | false | 是否全量拉取 |
+| `REMOTE_FETCH_COUNT` | 10 | 仅在 `REMOTE_FETCH_ALL=false` 时生效 |
+| `REMOTE_FETCH_AUTO_BIND` | true | 拉取后是否立即创建本地绑定 |
+| `REMOTE_FETCH_COUNTRY` | 空 | 可选国家过滤 |
+| `REMOTE_FETCH_TYPE` | 空 | 可选协议过滤 |
+| `REMOTE_FETCH_CHATGPT` | false | 可选 ChatGPT 可用过滤 |
+| `REMOTE_FETCH_SYNC_REMOTE_PORT` | 未设置 | 可选覆盖全局 `SYNC_REMOTE_PORT` |
+
+行为规则：
+
+- `REMOTE_FETCH_ENABLED=true` 但缺少 `REMOTE_FETCH_SERVER` / `REMOTE_FETCH_API_KEY` 时，只记日志并跳过启动拉取，不退出容器
+- `REMOTE_FETCH_ALL=true` 时忽略 `REMOTE_FETCH_COUNT`
+- 每次启动自动拉取前，客户端会清理本地 `source=server` 的旧代理，再写入远端最新快照
+- remote 模式的正式刷新方式是**重启容器**
+
+示例：
+
+```bash
+cd docker/client
+docker compose -f docker-compose-remote.yml up -d
+docker logs -f zenproxy-client
+```
+
+刷新：
+
+```bash
+docker compose -f docker-compose-remote.yml restart zenproxy-client
+```
+
+部署后连通性冒烟：
+
+1. 查看绑定列表：`curl http://127.0.0.1:9090/bindings`
+2. 若使用自动分配端口，优先验证 `127.0.0.1:60001`
+3. 若开启 `REMOTE_FETCH_SYNC_REMOTE_PORT=true`，先从 `/bindings` 取一个实际端口再验证
+4. 如果你本地保留了 `tests/smoke/client_check.py` 这类 smoke 脚本，可把 `PROXY_PORT` 改成目标端口后直接跑
 
 ---
 
