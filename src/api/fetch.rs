@@ -13,6 +13,8 @@ use std::sync::Arc;
 pub struct FetchQuery {
     pub api_key: Option<String>,
     #[serde(default)]
+    pub all: bool,
+    #[serde(default)]
     pub chatgpt: bool,
     #[serde(default)]
     pub google: bool,
